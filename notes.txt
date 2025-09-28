@@ -1,4 +1,5 @@
-cd ,,/gpg
 conda env create -f environment.yml
-conda activate gpg
+conda activate gpgomenv
 make
+
+pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall

@@ -4,6 +4,7 @@ from pygpg.complexity import compute_complexity
 from sklearn.metrics import r2_score, mean_squared_error
 from sklearn.model_selection import train_test_split
 
+
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 
