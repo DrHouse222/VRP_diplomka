@@ -3,7 +3,6 @@ import numpy as np
 import re
 from typing import List, Dict
 
-
 class VRPInstance:
     def __init__(self, instance):
         instance_dict = vrplib.read_instance(instance)
@@ -171,22 +170,13 @@ class VRPFeatureExtractor:
 
 
 class VRPTWInstance:
-    """Parses Solomon-style VRPTW instances (e.g., `Vrp-Set-HG/C1_2_1.txt`).
+    """Parses Solomon-style VRPTW instances using vrplib.
 
-    Expected format (abridged):
-        VEHICLE
-        NUMBER     CAPACITY
-          50          200
-
-        CUSTOMER
-        CUST NO.  XCOORD.  YCOORD.  DEMAND  READY TIME  DUE DATE  SERVICE TIME
-            0        70       70        0        0         1351          0
-            1        33       78       20      750         809          90
-
+    Uses vrplib.read_instance() with instance_format="solomon" for robust parsing.
+    
     Attributes
     -----------
     name: str
-        Derived from file stem
     num_vehicles: int
     capacity: int
     dimension: int
@@ -196,106 +186,29 @@ class VRPTWInstance:
     ready_times: np.ndarray shape (n,)
     due_dates: np.ndarray shape (n,)
     service_times: np.ndarray shape (n,)
-    depot: int (always 0 for Solomon files)
-    dist_matrix: np.ndarray shape (n, n) – Euclidean distances
+    depot: int (always 0)
+    dist_matrix: np.ndarray shape (n, n) – from vrplib
     """
 
     def __init__(self, file_path: str):
-        self.name = self._derive_name(file_path)
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            lines = [line.rstrip("\n") for line in f]
-
-        vehicle_idx = self._find_line_index(lines, "VEHICLE")
-        customer_idx = self._find_line_index(lines, "CUSTOMER")
-        if vehicle_idx is None or customer_idx is None:
-            raise ValueError("Input file missing VEHICLE or CUSTOMER section")
-
-        # Parse vehicle section
-        # Layout:
-        #   VEHICLE
-        #   NUMBER     CAPACITY
-        #     50          200
-        num_cap_line = self._next_nonempty_line(lines, start=vehicle_idx + 2)
-        if num_cap_line is None:
-            raise ValueError("Failed to locate vehicle number/capacity line")
-        num_vehicles, capacity = self._parse_two_ints(num_cap_line)
-        self.num_vehicles = num_vehicles
-        self.capacity = capacity
-
-        # Parse customer section – data begins two lines after the word CUSTOMER
-        # Skip header row line with column names; then read until EOF or blank-only tail
-        data_start = self._next_nonempty_index(lines, start=customer_idx + 2)
-        if data_start is None:
-            raise ValueError("Failed to locate customer header line")
-        # After header, the next non-empty is first data row
-        first_row_idx = self._next_nonempty_index(lines, start=data_start + 1)
-        if first_row_idx is None:
-            raise ValueError("Failed to locate first customer record")
-
-        node_ids: List[int] = []
-        xs: List[float] = []
-        ys: List[float] = []
-        demands: List[int] = []
-        ready_times: List[float] = []
-        due_dates: List[float] = []
-        service_times: List[float] = []
-
-        idx = first_row_idx
-        while idx < len(lines):
-            raw = lines[idx].strip()
-            idx += 1
-            if raw == "":
-                continue
-            # Some files may end with a single blank; we simply skip
-            parts = raw.split()
-            if len(parts) < 7:
-                # Likely trailer or malformed line; stop parsing data region
-                # but be tolerant and continue to next line instead of hard failing
-                continue
-            try:
-                nid = int(parts[0])
-                x = float(parts[1])
-                y = float(parts[2])
-                dem = int(parts[3])
-                rdy = float(parts[4])
-                due = float(parts[5])
-                svc = float(parts[6])
-            except ValueError:
-                # Skip non-data lines if any slipped through
-                continue
-
-            node_ids.append(nid)
-            xs.append(x)
-            ys.append(y)
-            demands.append(dem)
-            ready_times.append(rdy)
-            due_dates.append(due)
-            service_times.append(svc)
-
-        if not node_ids:
-            raise ValueError("No customer records parsed from file")
-
-        # Ensure a stable internal 0..n-1 indexing by sorting by original ids
-        # (If original ids do not start at 0, we still map the smallest id to 0 internally.)
-        n = len(node_ids)
-        order = np.argsort(np.array(node_ids))
-        xs = np.array(xs, dtype=float)[order]
-        ys = np.array(ys, dtype=float)[order]
-        demands = np.array(demands, dtype=int)[order]
-        ready_times = np.array(ready_times, dtype=float)[order]
-        due_dates = np.array(due_dates, dtype=float)[order]
-        service_times = np.array(service_times, dtype=float)[order]
-
-        self.dimension = n
+        # Use vrplib to parse Solomon format
+        instance_dict = vrplib.read_instance(file_path, instance_format="solomon")
+        
+        self.name = instance_dict["name"]
+        self.num_vehicles = instance_dict["vehicles"]
+        self.capacity = instance_dict["capacity"]
+        self.dimension = instance_dict["node_coord"].shape[0]
         self.depot = 0
-        self.coords = np.stack([xs, ys], axis=1)
-        self.demands = demands
-        self.ready_times = ready_times
-        self.due_dates = due_dates
-        self.service_times = service_times
-
-        self.dist_matrix = self._compute_euclidean_distances(self.coords)
+        
+        # Extract arrays
+        self.coords = instance_dict["node_coord"]
+        self.demands = instance_dict["demand"]
+        self.ready_times = instance_dict["time_window"][:, 0]  # ready times
+        self.due_dates = instance_dict["time_window"][:, 1]    # due dates
+        self.service_times = instance_dict["service_time"]
+        
+        # Use precomputed distance matrix from vrplib
+        self.dist_matrix = instance_dict["edge_weight"]
 
     def cost(self, routes):
         """
@@ -320,47 +233,3 @@ class VRPTWInstance:
             f"VRPTWInstance({self.name}, n={self.dimension}, cap={self.capacity}, "
             f"vehicles={self.num_vehicles})"
         )
-
-    @staticmethod
-    def _derive_name(path: str) -> str:
-        import os
-
-        base = os.path.basename(path)
-        return os.path.splitext(base)[0]
-
-    @staticmethod
-    def _find_line_index(lines: List[str], starts_with: str):
-        key = starts_with.strip().upper()
-        for i, line in enumerate(lines):
-            if line.strip().upper().startswith(key):
-                return i
-        return None
-
-    @staticmethod
-    def _next_nonempty_line(lines: List[str], start: int) -> str | None:
-        for i in range(start, len(lines)):
-            s = lines[i].strip()
-            if s != "":
-                return s
-        return None
-
-    @staticmethod
-    def _next_nonempty_index(lines: List[str], start: int) -> int | None:
-        for i in range(start, len(lines)):
-            if lines[i].strip() != "":
-                return i
-        return None
-
-    @staticmethod
-    def _parse_two_ints(line: str) -> tuple[int, int]:
-        parts = line.split()
-        if len(parts) < 2:
-            raise ValueError("Expected two integers on the vehicle line")
-        return int(parts[0]), int(parts[1])
-
-    @staticmethod
-    def _compute_euclidean_distances(coords: np.ndarray) -> np.ndarray:
-        # Pairwise Euclidean using broadcasting
-        diff = coords[:, None, :] - coords[None, :, :]
-        dists = np.sqrt(np.sum(diff * diff, axis=2))
-        return dists

@@ -1,1 +1,7 @@
 using VRPLIB for parsing
+vrplib does support Solomon format with the instance_format="solomon" parameter. T
+
+
+Two possible strategies:
+    Superset model — use one GP model trained on a superset of features (all variants). Variant-specific features are masked/filled with safe defaults when not present. Add a variant indicator feature. => easier deployment, generalization across variants.
+    Per-variant models — maintain a separate GP (pset, training) per VRP variant. => potentially better specialized performance, slightly more management overhead.
