@@ -52,10 +52,6 @@ class VRPInstance:
 
 class VRPFeatureExtractor:
     """Extracts VRP/VRPTW features for request evaluation.
-
-    - Works for classic capacitated VRP.
-    - If the instance also has VRPTW attributes (ready_times, due_dates, service_times),
-      it augments the feature set with time-window-related metrics.
     """
     
     def __init__(self, instance: VRPInstance):
@@ -171,8 +167,6 @@ class VRPFeatureExtractor:
 
 class VRPTWInstance:
     """Parses Solomon-style VRPTW instances using vrplib.
-
-    Uses vrplib.read_instance() with instance_format="solomon" for robust parsing.
     
     Attributes
     -----------

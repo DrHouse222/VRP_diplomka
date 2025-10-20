@@ -2,9 +2,6 @@
 import numpy as np
 from parser import VRPInstance, VRPTWInstance
 
-# earliest first - only for time windows
-# savings
-
 
 def nearest_neighbor_heuristic(instance, problem: str = "auto"):
     """
@@ -51,11 +48,11 @@ def nearest_neighbor_heuristic(instance, problem: str = "auto"):
                 if not feasible:
                     # return to depot
                     route.append(instance.depot)
-                    # advance time to depot arrival (optional bookkeeping)
+                    # advance time to depot arrival
                     current_time = current_time + instance.dist_matrix[current, instance.depot]
                     break
 
-                # choose nearest by travel distance (can be changed to earliest start)
+                # choose nearest by travel distance
                 feasible.sort(key=lambda t: t[1])
                 next_customer, travel, start_service, finish_service = feasible[0]
 
@@ -70,7 +67,7 @@ def nearest_neighbor_heuristic(instance, problem: str = "auto"):
                     route.append(instance.depot)
                     break
 
-                # pick nearest neighbor (distance only)
+                # pick nearest neighbor (distance)
                 dists = [instance.dist_matrix[current, c] for c in capacity_ok]
                 next_customer = capacity_ok[int(np.argmin(dists))]
 
@@ -89,10 +86,10 @@ import numpy as np
 
 def savings_heuristic(instance, problem: str = "auto"):
     """
-    Clarke-Wright Savings heuristic (parallel version).
+    Clarke-Wright Savings heuristic
 
     Args:
-        instance: VRP or VRPTW instance
+        instance: VRP or VRPTW
         problem: one of {"auto", "vrp", "vrptw"}
     """
     if problem not in {"auto", "vrp", "vrptw"}:

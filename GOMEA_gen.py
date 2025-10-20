@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Genetic Programming solution for CVRP using pyGPGOMEA framework.
-Evolves a scoring function that evaluates requests based on VRP features.
+Genetic Programming solution for VRP variants using pyGPGOMEA framework.
 """
 
 import numpy as np
@@ -14,7 +13,6 @@ from problem_types import ProblemType, CVRPProblemType, CVRPTWProblemType, Probl
 
 
 
-
 class VRPDataGenerator:
     """Generates training data for VRP scoring function using multiple instances."""
     
@@ -22,7 +20,7 @@ class VRPDataGenerator:
         self.instances = instances
         self.problem_type = problem_type
         
-        # Auto-detect problem type if needed
+        # Auto-detect problem type
         if problem_type == "auto":
             self.problem_type = PROBLEM_REGISTRY.auto_detect(instances[0])
         
@@ -109,7 +107,7 @@ class VRPDataGenerator:
                     # Convert to array using problem-specific feature extraction
                     feature_array = np.array(self.problem_config.extract_feature_values(features))
                     
-                    # Calculate target score (lower is better for VRP)
+                    # Calculate target score
                     # Use a combination of distance and capacity considerations
                     dist_score = features['dist_from_current']
                     capacity_penalty = 0 if features['remaining_capacity'] >= features['demand'] else 1000
@@ -146,7 +144,7 @@ def solve_with_gp_scoring(instance, feature_extractor: VRPFeatureExtractor,
     Returns:
         List of routes
     """
-    # Auto-detect problem type if needed
+    # Auto-detect problem type
     if problem_type == "auto":
         problem_type = PROBLEM_REGISTRY.auto_detect(instance)
     
@@ -172,7 +170,7 @@ def run_gomea_genetic_programming(instances: List,
     Returns:
         Trained GP model
     """
-    # Auto-detect problem type if needed
+    # Auto-detect problem
     if problem_type == "auto":
         problem_type = PROBLEM_REGISTRY.auto_detect(instances[0])
     
@@ -192,7 +190,7 @@ def run_gomea_genetic_programming(instances: List,
     print(f"\nRunning GP-GOMEA...")
     ea = GPG(
         gomea=True,  # Use GOMEA as search algorithm
-        functions="+_-_*_p/_sqrt_plog",  # Functions to use
+        functions="+_-_*_p/",  # Functions to use
         coeffmut='0.5_0.5_0.5_10',  # Constant mutation parameters
         time=time_limit,  # Time limit
         generations=-1,  # No generation limit
@@ -202,7 +200,7 @@ def run_gomea_genetic_programming(instances: List,
         popsize=popsize,  # Population size
         batchsize=256,  # Batch size
         parallel=parallel,  # Parallel cores
-        linearscaling=True,  # Use linear scaling (recommended for real-world data)
+        linearscaling=True,  # Use linear scaling
         silent=False  # Show progress
     )
     
@@ -220,13 +218,14 @@ def load_instances_by_type():
     """Load instances grouped by problem type."""
     cvrp_instances = [
         VRPInstance("Set_A/A-n32-k5.vrp"),
-        # Add more CVRP instances as needed
+        # TODO: Add more
     ]
     
     vrptw_instances = [
         VRPTWInstance("Vrp-Set-HG/C1_2_2.txt"),
         VRPTWInstance("Vrp-Set-HG/C1_2_3.txt"),
         VRPTWInstance("Vrp-Set-HG/C1_2_4.txt"),
+        # TODO: Add more
     ]
     
     return cvrp_instances, vrptw_instances
@@ -328,7 +327,6 @@ def main():
             parallel=2
         )
     
-    # Summary
     print(f"\n{'='*60}")
     print("TRAINING SUMMARY")
     print(f"{'='*60}")

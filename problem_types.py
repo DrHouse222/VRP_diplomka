@@ -47,7 +47,6 @@ class ProblemType(ABC):
     
     def create_primitive_set(self, gp_module) -> Optional[Any]:
         """Create GP primitive set for this problem type (DEAP-specific)."""
-        # This method is optional and only used by DEAP
         return None
 
 

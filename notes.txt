@@ -3,3 +3,41 @@ conda activate gpgomenv
 make
 
 pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
+
+Functions
++ Addition
+- Subtraction
+* Multiplication
+p/ Protected Division
+
+Terminals
+D Travel distance
+T Travel time
+RT Return time to the depot
+AVGT Average time from remaining nonserved customers
+to the considered customer
+AVGTL Average time from remaining nonserved customers
+to the last customer added to the route
+C Extra cost of serving the considered customer
+CR Critical Ratio
+RTT Route total time
+NRTT Route total time after adding the consider customer
+
+
+
+functions: +, -, *, /, min, max
+
+D Travel distance x x x
+T Travel time x x x
+S Slack time x x x
+ST Service time x x
+RT Return time to the depot x x
+RC Vehicle’s remain capacity x x
+Q Demand x x
+AVGT Average time from remaining nonserved customers to the considered customer x x
+AVGTL Average time from remaining nonserved customers to the last customer added to the route x x
+C Extra cost of serving the considered customer x
+CR Critical Ratio x
+RTT Route total time x
+NRTT Route total time after adding the consider customer x
+U Route utilization x

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
 Genetic Programming solution for VRP variants using DEAP framework.
-Evolves a scoring function that evaluates requests based on problem-specific features.
-Supports CVRP, CVRPTW, and extensible for future problem types.
 """
 
 import random
@@ -15,22 +13,16 @@ from basic_heuristics import nearest_neighbor_heuristic, savings_heuristic
 from problem_types import ProblemType, CVRPProblemType, CVRPTWProblemType, ProblemTypeRegistry, PROBLEM_REGISTRY
 
 
-# Helper functions for DEAP
 def protected_div(left, right):
-    """Protected division to avoid division by zero."""
     try:
         return left / right if abs(right) > 1e-6 else 1.0
     except:
         return 1.0
 
-
 def max_func(a, b):
-    """Maximum function for time windows."""
     return max(a, b)
 
-
 def min_func(a, b):
-    """Minimum function for time windows."""
     return min(a, b)
 
 
@@ -95,7 +87,7 @@ def run_genetic_programming(instances: List, problem_type: str = "auto",
                           population_size: int = 50, generations: int = 50) -> Tuple[Any, Any, Any, str]:
     """Run genetic programming to evolve VRP scoring function."""
     
-    # Auto-detect problem type if needed
+    # Auto-detect problem type
     if problem_type == "auto":
         problem_type = PROBLEM_REGISTRY.auto_detect(instances[0])
     
@@ -144,16 +136,12 @@ def load_instances_by_type():
     """Load instances grouped by problem type."""
     cvrp_instances = [
         VRPInstance("Set_A/A-n32-k5.vrp"),
-        # Add more CVRP instances as needed
-        # VRPInstance("Set_A/A-n33-k5.vrp"),
-        # VRPInstance("Set_A/A-n34-k5.vrp"),
+        # TODO: Add more
     ]
     
     vrptw_instances = [
         VRPTWInstance("Vrp-Set-HG/C1_2_2.txt"),
-        # Add more VRPTW instances as needed
-        # VRPTWInstance("Vrp-Set-HG/C1_2_3.txt"),
-        # VRPTWInstance("Vrp-Set-HG/C1_2_4.txt"),
+        # TODO: Add more
     ]
     
     return cvrp_instances, vrptw_instances
@@ -252,7 +240,6 @@ def main():
             generations=30
         )
     
-    # Summary
     print(f"\n{'='*60}")
     print("TRAINING SUMMARY")
     print(f"{'='*60}")
