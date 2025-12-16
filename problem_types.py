@@ -41,8 +41,8 @@ class ProblemType(ABC):
         pass
     
     @abstractmethod
-    def evaluate_solution(self, instance, solution) -> Tuple[float, float]:
-        """Evaluate solution quality. Returns (distance, violation)."""
+    def evaluate_solution(self, instance, solution) -> float:
+        """Evaluate solution quality. Returns scalar fitness (lower is better)."""
         pass
     
     def create_primitive_set(self, gp_module) -> Optional[Any]:
@@ -155,8 +155,8 @@ class CVRPProblemType(ProblemType):
         
         return routes
     
-    def evaluate_solution(self, instance, solution) -> Tuple[float, float]:
-        """Evaluate CVRP solution quality."""
+    def evaluate_solution(self, instance, solution) -> float:
+        """Evaluate CVRP solution quality (scalar fitness)."""
         return instance.cost(solution)
 
 
@@ -300,8 +300,8 @@ class CVRPTWProblemType(ProblemType):
         
         return routes
     
-    def evaluate_solution(self, instance, solution) -> Tuple[float, float]:
-        """Evaluate CVRPTW solution quality."""
+    def evaluate_solution(self, instance, solution) -> float:
+        """Evaluate CVRPTW solution quality (scalar fitness)."""
         return instance.cost(solution)
 
 

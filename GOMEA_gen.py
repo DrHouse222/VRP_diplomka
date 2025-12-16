@@ -217,14 +217,14 @@ def run_gomea_genetic_programming(instances: List,
 def load_instances_by_type():
     """Load instances grouped by problem type."""
     cvrp_instances = [
-        VRPInstance("Set_A/A-n32-k5.vrp"),
+        VRPInstance("Sets/Set_A/A-n32-k5.vrp"),
         # TODO: Add more
     ]
     
     vrptw_instances = [
-        VRPTWInstance("Vrp-Set-HG/C1_2_2.txt"),
-        VRPTWInstance("Vrp-Set-HG/C1_2_3.txt"),
-        VRPTWInstance("Vrp-Set-HG/C1_2_4.txt"),
+        VRPTWInstance("Sets/Vrp-Set-HG/C1_2_2.txt"),
+        VRPTWInstance("Sets/Vrp-Set-HG/C1_2_3.txt"),
+        VRPTWInstance("Sets/Vrp-Set-HG/C1_2_4.txt"),
         # TODO: Add more
     ]
     

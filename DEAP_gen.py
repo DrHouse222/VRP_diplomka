@@ -74,10 +74,8 @@ def evaluate_individual(individual, instances, problem_type: str = "CVRP"):
         
         # Solve using the GP function
         solution = problem_config.solve_with_scoring(instance, feature_extractor, func)
-        distance, violation = problem_config.evaluate_solution(instance, solution)
-        
-        # Fitness is total distance + penalty for violations
-        fitness = distance + 1000 * violation
+        # Problem type now returns scalar fitness via unified compute_cost
+        fitness = problem_config.evaluate_solution(instance, solution)
         total_fitness += fitness
     
     return (total_fitness,)
@@ -135,12 +133,12 @@ def run_genetic_programming(instances: List, problem_type: str = "auto",
 def load_instances_by_type():
     """Load instances grouped by problem type."""
     cvrp_instances = [
-        VRPInstance("Set_A/A-n32-k5.vrp"),
+        VRPInstance("Sets/Set_A/A-n32-k5.vrp"),
         # TODO: Add more
     ]
     
     vrptw_instances = [
-        VRPTWInstance("Vrp-Set-HG/C1_2_2.txt"),
+        VRPTWInstance("Sets/Vrp-Set-HG/C1_2_2.txt"),
         # TODO: Add more
     ]
     
@@ -186,27 +184,27 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
         
         # Solve using evolved function
         gp_solution = problem_config.solve_with_scoring(instance, feature_extractor, func)
-        gp_distance, gp_violation = problem_config.evaluate_solution(instance, gp_solution)
+        gp_fitness = problem_config.evaluate_solution(instance, gp_solution)
         
         # Compare with heuristics (map problem types to heuristic format)
         heuristic_problem_type = "vrp" if problem_type == "CVRP" else "vrptw"
         nn_routes = nearest_neighbor_heuristic(instance, problem=heuristic_problem_type)
-        nn_distance, nn_violation = instance.cost(nn_routes)
+        nn_fitness = instance.cost(nn_routes)
         
         savings_routes = savings_heuristic(instance, problem=heuristic_problem_type)
-        savings_distance, savings_violation = instance.cost(savings_routes)
+        savings_fitness = instance.cost(savings_routes)
         
-        print(f"  GP-DEAP Solution: Distance = {gp_distance:.2f}, Violation = {gp_violation:.2f}")
-        print(f"  Nearest Neighbor: Distance = {nn_distance:.2f}, Violation = {nn_violation:.2f}")
-        print(f"  Savings: Distance = {savings_distance:.2f}, Violation = {savings_violation:.2f}")
+        print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
+        print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
+        print(f"  Savings: Fitness = {savings_fitness:.2f}")
         
-        if nn_distance > 0:
-            improvement_nn = ((nn_distance - gp_distance) / nn_distance) * 100
-            print(f"  Improvement over NN: {improvement_nn:.2f}%")
+        if nn_fitness > 0:
+            improvement_nn = ((nn_fitness - gp_fitness) / nn_fitness) * 100
+            print(f"  Improvement over NN (fitness): {improvement_nn:.2f}%")
         
-        if savings_distance > 0:
-            improvement_savings = ((savings_distance - gp_distance) / savings_distance) * 100
-            print(f"  Improvement over Savings: {improvement_savings:.2f}%")
+        if savings_fitness > 0:
+            improvement_savings = ((savings_fitness - gp_fitness) / savings_fitness) * 100
+            print(f"  Improvement over Savings (fitness): {improvement_savings:.2f}%")
     
     return best_individual, logbook, pset
 

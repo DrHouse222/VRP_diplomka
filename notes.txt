@@ -4,6 +4,24 @@ make
 
 pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
 
+
+TODO
+in parser connect the costs to the same function with if statements to differentiate problem types
+
+charging tech
+distance being different than euclidian
+max travel time
+
+find out how multiple vehicles work, the program could choose num of vehicles
+
+
+
+
+
+
+
+
+
 Functions
 + Addition
 - Subtraction

@@ -173,7 +173,7 @@ def savings_heuristic(instance, problem: str = "auto"):
 
 
 '''
-instance = VRPInstance("Set_A/A-n32-k5.vrp")
+instance = VRPInstance("Sets/Set_A/A-n32-k5.vrp")
 routes = nearest_neighbor_heuristic(instance)
 total_distance, capacity_violation = instance.cost(routes)
 print(f"Routes: {routes}")
@@ -181,8 +181,10 @@ print(f"Total distance: {total_distance}, Capacity violation: {capacity_violatio
 '''
 
 
-instance = VRPTWInstance("Vrp-Set-HG/C1_2_1.txt")
-routes = savings_heuristic(instance)
-total_distance, capacity_violation = instance.cost(routes)
-print(f"Routes: {routes}")
-print(f"Total distance: {total_distance}, Capacity violation: {capacity_violation}")
+if __name__ == "__main__":
+    # Simple manual test using VRPTW instance
+    instance = VRPTWInstance("Sets/Vrp-Set-HG/C1_2_1.txt")
+    routes = savings_heuristic(instance)
+    fitness = instance.cost(routes)
+    print(f"Routes: {routes}")
+    print(f"Fitness (distance + penalties): {fitness}")

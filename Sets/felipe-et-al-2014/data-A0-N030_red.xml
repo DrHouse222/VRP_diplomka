@@ -1,0 +1,616 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<instance>
+	<info>
+		<dataset>GVRP-multitech</dataset>
+		<name>data-A0-N030_red</name>
+	</info>
+	<network>
+		<nodes>
+			<node id="0" type="1">
+				<cx>44</cx>
+				<cy>32</cy>
+			</node>
+			<node id="1" type="1">
+				<cx>27</cx>
+				<cy>78</cy>
+			</node>
+			<node id="2" type="1">
+				<cx>96</cx>
+				<cy>45</cy>
+			</node>
+			<node id="3" type="1">
+				<cx>89</cx>
+				<cy>84</cy>
+			</node>
+			<node id="4" type="1">
+				<cx>76</cx>
+				<cy>28</cy>
+			</node>
+			<node id="5" type="2">
+				<cx>70</cx>
+				<cy>70</cy>
+				<custom>
+					<has_tech>1</has_tech>
+					<has_tech>2</has_tech>
+				</custom>
+			</node>
+			<node id="6" type="2">
+				<cx>40</cx>
+				<cy>40</cy>
+				<custom>
+					<has_tech>1</has_tech>
+				</custom>
+			</node>
+			<node id="7" type="2">
+				<cx>70</cx>
+				<cy>40</cy>
+				<custom>
+					<has_tech>1</has_tech>
+					<has_tech>2</has_tech>
+				</custom>
+			</node>
+			<node id="8" type="2">
+				<cx>100</cx>
+				<cy>40</cy>
+				<custom>
+					<has_tech>1</has_tech>
+				</custom>
+			</node>
+			<node id="9" type="2">
+				<cx>40</cx>
+				<cy>70</cy>
+				<custom>
+					<has_tech>1</has_tech>
+					<has_tech>2</has_tech>
+				</custom>
+			</node>
+			<node id="10" type="2">
+				<cx>100</cx>
+				<cy>70</cy>
+				<custom>
+					<has_tech>1</has_tech>
+					<has_tech>2</has_tech>
+				</custom>
+			</node>
+			<node id="11" type="2">
+				<cx>40</cx>
+				<cy>100</cy>
+				<custom>
+					<has_tech>1</has_tech>
+				</custom>
+			</node>
+			<node id="12" type="2">
+				<cx>70</cx>
+				<cy>100</cy>
+				<custom>
+					<has_tech>1</has_tech>
+					<has_tech>2</has_tech>
+				</custom>
+			</node>
+			<node id="13" type="2">
+				<cx>100</cx>
+				<cy>100</cy>
+				<custom>
+					<has_tech>1</has_tech>
+				</custom>
+			</node>
+			<node id="14" type="0">
+				<cx>70</cx>
+				<cy>70</cy>
+				<custom>
+					<has_tech>0</has_tech>
+				</custom>
+			</node>
+		</nodes>
+		<links symmetric="true">
+			<link head="0" tail="1">
+				<length>50</length>
+				<travel_time>120</travel_time>
+			</link>
+			<link head="0" tail="2">
+				<length>54</length>
+				<travel_time>129.6</travel_time>
+			</link>
+			<link head="0" tail="3">
+				<length>69</length>
+				<travel_time>165.6</travel_time>
+			</link>
+			<link head="0" tail="4">
+				<length>33</length>
+				<travel_time>79.2</travel_time>
+			</link>
+			<link head="0" tail="5">
+				<length>47</length>
+				<travel_time>112.8</travel_time>
+			</link>
+			<link head="0" tail="6">
+				<length>9</length>
+				<travel_time>21.6</travel_time>
+			</link>
+			<link head="0" tail="7">
+				<length>28</length>
+				<travel_time>67.2</travel_time>
+			</link>
+			<link head="0" tail="8">
+				<length>57</length>
+				<travel_time>136.8</travel_time>
+			</link>
+			<link head="0" tail="9">
+				<length>39</length>
+				<travel_time>93.6</travel_time>
+			</link>
+			<link head="0" tail="10">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="0" tail="11">
+				<length>69</length>
+				<travel_time>165.6</travel_time>
+			</link>
+			<link head="0" tail="12">
+				<length>73</length>
+				<travel_time>175.2</travel_time>
+			</link>
+			<link head="0" tail="13">
+				<length>89</length>
+				<travel_time>213.6</travel_time>
+			</link>
+			<link head="0" tail="14">
+				<length>47</length>
+				<travel_time>112.8</travel_time>
+			</link>
+			<link head="1" tail="2">
+				<length>77</length>
+				<travel_time>184.8</travel_time>
+			</link>
+			<link head="1" tail="3">
+				<length>63</length>
+				<travel_time>151.2</travel_time>
+			</link>
+			<link head="1" tail="4">
+				<length>71</length>
+				<travel_time>170.4</travel_time>
+			</link>
+			<link head="1" tail="5">
+				<length>44</length>
+				<travel_time>105.6</travel_time>
+			</link>
+			<link head="1" tail="6">
+				<length>41</length>
+				<travel_time>98.4</travel_time>
+			</link>
+			<link head="1" tail="7">
+				<length>58</length>
+				<travel_time>139.2</travel_time>
+			</link>
+			<link head="1" tail="8">
+				<length>83</length>
+				<travel_time>199.2</travel_time>
+			</link>
+			<link head="1" tail="9">
+				<length>16</length>
+				<travel_time>38.4</travel_time>
+			</link>
+			<link head="1" tail="10">
+				<length>74</length>
+				<travel_time>177.6</travel_time>
+			</link>
+			<link head="1" tail="11">
+				<length>26</length>
+				<travel_time>62.4</travel_time>
+			</link>
+			<link head="1" tail="12">
+				<length>49</length>
+				<travel_time>117.6</travel_time>
+			</link>
+			<link head="1" tail="13">
+				<length>77</length>
+				<travel_time>184.8</travel_time>
+			</link>
+			<link head="1" tail="14">
+				<length>44</length>
+				<travel_time>105.6</travel_time>
+			</link>
+			<link head="2" tail="3">
+				<length>40</length>
+				<travel_time>96</travel_time>
+			</link>
+			<link head="2" tail="4">
+				<length>27</length>
+				<travel_time>64.8</travel_time>
+			</link>
+			<link head="2" tail="5">
+				<length>37</length>
+				<travel_time>88.8</travel_time>
+			</link>
+			<link head="2" tail="6">
+				<length>57</length>
+				<travel_time>136.8</travel_time>
+			</link>
+			<link head="2" tail="7">
+				<length>27</length>
+				<travel_time>64.8</travel_time>
+			</link>
+			<link head="2" tail="8">
+				<length>7</length>
+				<travel_time>16.8</travel_time>
+			</link>
+			<link head="2" tail="9">
+				<length>62</length>
+				<travel_time>148.8</travel_time>
+			</link>
+			<link head="2" tail="10">
+				<length>26</length>
+				<travel_time>62.4</travel_time>
+			</link>
+			<link head="2" tail="11">
+				<length>79</length>
+				<travel_time>189.6</travel_time>
+			</link>
+			<link head="2" tail="12">
+				<length>61</length>
+				<travel_time>146.4</travel_time>
+			</link>
+			<link head="2" tail="13">
+				<length>56</length>
+				<travel_time>134.4</travel_time>
+			</link>
+			<link head="2" tail="14">
+				<length>37</length>
+				<travel_time>88.8</travel_time>
+			</link>
+			<link head="3" tail="4">
+				<length>58</length>
+				<travel_time>139.2</travel_time>
+			</link>
+			<link head="3" tail="5">
+				<length>24</length>
+				<travel_time>57.6</travel_time>
+			</link>
+			<link head="3" tail="6">
+				<length>66</length>
+				<travel_time>158.4</travel_time>
+			</link>
+			<link head="3" tail="7">
+				<length>48</length>
+				<travel_time>115.2</travel_time>
+			</link>
+			<link head="3" tail="8">
+				<length>46</length>
+				<travel_time>110.4</travel_time>
+			</link>
+			<link head="3" tail="9">
+				<length>51</length>
+				<travel_time>122.4</travel_time>
+			</link>
+			<link head="3" tail="10">
+				<length>18</length>
+				<travel_time>43.2</travel_time>
+			</link>
+			<link head="3" tail="11">
+				<length>52</length>
+				<travel_time>124.8</travel_time>
+			</link>
+			<link head="3" tail="12">
+				<length>25</length>
+				<travel_time>60</travel_time>
+			</link>
+			<link head="3" tail="13">
+				<length>20</length>
+				<travel_time>48</travel_time>
+			</link>
+			<link head="3" tail="14">
+				<length>24</length>
+				<travel_time>57.6</travel_time>
+			</link>
+			<link head="4" tail="5">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="4" tail="6">
+				<length>38</length>
+				<travel_time>91.2</travel_time>
+			</link>
+			<link head="4" tail="7">
+				<length>14</length>
+				<travel_time>33.6</travel_time>
+			</link>
+			<link head="4" tail="8">
+				<length>27</length>
+				<travel_time>64.8</travel_time>
+			</link>
+			<link head="4" tail="9">
+				<length>56</length>
+				<travel_time>134.4</travel_time>
+			</link>
+			<link head="4" tail="10">
+				<length>49</length>
+				<travel_time>117.6</travel_time>
+			</link>
+			<link head="4" tail="11">
+				<length>81</length>
+				<travel_time>194.4</travel_time>
+			</link>
+			<link head="4" tail="12">
+				<length>73</length>
+				<travel_time>175.2</travel_time>
+			</link>
+			<link head="4" tail="13">
+				<length>76</length>
+				<travel_time>182.4</travel_time>
+			</link>
+			<link head="4" tail="14">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="5" tail="6">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="5" tail="7">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="5" tail="8">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="5" tail="9">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="5" tail="10">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="5" tail="11">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="5" tail="12">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="5" tail="13">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="5" tail="14">
+				<length>0</length>
+				<travel_time>0</travel_time>
+			</link>
+			<link head="6" tail="7">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="6" tail="8">
+				<length>60</length>
+				<travel_time>144</travel_time>
+			</link>
+			<link head="6" tail="9">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="6" tail="10">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="6" tail="11">
+				<length>60</length>
+				<travel_time>144</travel_time>
+			</link>
+			<link head="6" tail="12">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="6" tail="13">
+				<length>85</length>
+				<travel_time>204</travel_time>
+			</link>
+			<link head="6" tail="14">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="7" tail="8">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="7" tail="9">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="7" tail="10">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="7" tail="11">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="7" tail="12">
+				<length>60</length>
+				<travel_time>144</travel_time>
+			</link>
+			<link head="7" tail="13">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="7" tail="14">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="8" tail="9">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="8" tail="10">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="8" tail="11">
+				<length>85</length>
+				<travel_time>204</travel_time>
+			</link>
+			<link head="8" tail="12">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="8" tail="13">
+				<length>60</length>
+				<travel_time>144</travel_time>
+			</link>
+			<link head="8" tail="14">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="9" tail="10">
+				<length>60</length>
+				<travel_time>144</travel_time>
+			</link>
+			<link head="9" tail="11">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="9" tail="12">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="9" tail="13">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="9" tail="14">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="10" tail="11">
+				<length>68</length>
+				<travel_time>163.2</travel_time>
+			</link>
+			<link head="10" tail="12">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="10" tail="13">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="10" tail="14">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="11" tail="12">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="11" tail="13">
+				<length>60</length>
+				<travel_time>144</travel_time>
+			</link>
+			<link head="11" tail="14">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+			<link head="12" tail="13">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="12" tail="14">
+				<length>30</length>
+				<travel_time>72</travel_time>
+			</link>
+			<link head="13" tail="14">
+				<length>43</length>
+				<travel_time>103.2</travel_time>
+			</link>
+		</links>
+	</network>
+	<fleet>
+		<vehicle_profile type="0" number="7">
+			<departure_node>14</departure_node>
+			<arrival_node>14</arrival_node>
+			<capacity>2300</capacity>
+			<max_travel_time>480</max_travel_time>
+			<custom>
+				<battery_capacity>160</battery_capacity>
+				<charging_techs>
+					<function has_tech="0">
+						<gamma>0</gamma>
+						<rho>0</rho>
+					</function>
+					<function has_tech="1">
+						<gamma>0.022</gamma>
+						<rho>2.66667</rho>
+					</function>
+					<function has_tech="2">
+						<gamma>0.024</gamma>
+						<rho>6</rho>
+					</function>
+				</charging_techs>
+			</custom>
+		</vehicle_profile>
+	</fleet>
+	<requests>
+		<request id="0" node="0">
+			<quantity>221</quantity>
+			<service_time>11</service_time>
+		</request>
+		<request id="1" node="1">
+			<quantity>186</quantity>
+			<service_time>10</service_time>
+		</request>
+		<request id="2" node="2">
+			<quantity>128</quantity>
+			<service_time>12</service_time>
+		</request>
+		<request id="3" node="3">
+			<quantity>218</quantity>
+			<service_time>11</service_time>
+		</request>
+		<request id="4" node="4">
+			<quantity>227</quantity>
+			<service_time>12</service_time>
+		</request>
+		<request id="5" node="5">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="6" node="6">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="7" node="7">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="8" node="8">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="9" node="9">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="10" node="10">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="11" node="11">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="12" node="12">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="13" node="13">
+			<quantity>0</quantity>
+			<service_time>5</service_time>
+		</request>
+		<request id="14" node="14">
+			<quantity>0</quantity>
+			<service_time>0</service_time>
+		</request>
+	</requests>
+</instance>
+
