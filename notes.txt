@@ -12,12 +12,13 @@ charging tech
 distance being different than euclidian
 max travel time
 
-find out how multiple vehicles work, the program could choose num of vehicles
+the program could choose num of vehicles
 
+penalize tree size
 
+trucks return to depo multiple times
 
-
-
+add/remove features
 
 
 

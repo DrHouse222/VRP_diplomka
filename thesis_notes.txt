@@ -7,3 +7,4 @@ Two possible strategies:
     Per-variant models — maintain a separate GP (pset, training) per VRP variant. => potentially better specialized performance, slightly more management overhead.
 
 using hard time windows
+soft capacity viol

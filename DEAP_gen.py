@@ -10,28 +10,11 @@ from typing import List, Tuple, Dict, Any, Callable, Optional
 from deap import base, creator, tools, gp, algorithms
 from parser import VRPInstance, VRPTWInstance, VRPFeatureExtractor
 from basic_heuristics import nearest_neighbor_heuristic, savings_heuristic
-from problem_types import ProblemType, CVRPProblemType, CVRPTWProblemType, ProblemTypeRegistry, PROBLEM_REGISTRY
-
-
-def protected_div(left, right):
-    try:
-        return left / right if abs(right) > 1e-6 else 1.0
-    except:
-        return 1.0
-
-def max_func(a, b):
-    return max(a, b)
-
-def min_func(a, b):
-    return min(a, b)
-
+from problem_types import VRPProblemType, VRP_PROBLEM_TYPE
 
 def create_primitive_set(problem_type: str = "CVRP"):
     """Create the primitive set for genetic programming."""
-    problem_config = PROBLEM_REGISTRY.get(problem_type)
-    if problem_config is None:
-        raise ValueError(f"Unknown problem type: {problem_type}")
-    return problem_config.create_primitive_set(gp)
+    return VRP_PROBLEM_TYPE.create_primitive_set(gp)
 
 
 def create_individual(pset):
@@ -43,8 +26,11 @@ def create_toolbox(problem_type: str = "CVRP"):
     """Create the DEAP toolbox for the given problem type."""
     pset = create_primitive_set(problem_type)
     
-    creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
-    creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
+    # Create DEAP classes only if they don't already exist
+    if not hasattr(creator, "FitnessMin"):
+        creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
+    if not hasattr(creator, "Individual"):
+        creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
     
     toolbox = base.Toolbox()
     toolbox.register("expr", create_individual, pset)
@@ -60,12 +46,8 @@ def create_toolbox(problem_type: str = "CVRP"):
 
 def evaluate_individual(individual, instances, problem_type: str = "CVRP"):
     """Evaluate a GP individual on VRP instances."""
-    problem_config = PROBLEM_REGISTRY.get(problem_type)
-    if problem_config is None:
-        raise ValueError(f"Unknown problem type: {problem_type}")
-    
     # Compile the individual
-    func = gp.compile(expr=individual, pset=problem_config.create_primitive_set(gp))
+    func = gp.compile(expr=individual, pset=VRP_PROBLEM_TYPE.create_primitive_set(gp))
     
     total_fitness = 0.0
     
@@ -73,9 +55,9 @@ def evaluate_individual(individual, instances, problem_type: str = "CVRP"):
         feature_extractor = VRPFeatureExtractor(instance)
         
         # Solve using the GP function
-        solution = problem_config.solve_with_scoring(instance, feature_extractor, func)
+        solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func)
         # Problem type now returns scalar fitness via unified compute_cost
-        fitness = problem_config.evaluate_solution(instance, solution)
+        fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, solution)
         total_fitness += fitness
     
     return (total_fitness,)
@@ -85,9 +67,12 @@ def run_genetic_programming(instances: List, problem_type: str = "auto",
                           population_size: int = 50, generations: int = 50) -> Tuple[Any, Any, Any, str]:
     """Run genetic programming to evolve VRP scoring function."""
     
-    # Auto-detect problem type
+    # Auto-detect problem type (for display purposes)
     if problem_type == "auto":
-        problem_type = PROBLEM_REGISTRY.auto_detect(instances[0])
+        if hasattr(instances[0], 'ready_times') and hasattr(instances[0], 'due_dates'):
+            problem_type = "CVRPTW"
+        else:
+            problem_type = "CVRP"
     
     print(f"Using problem type: {problem_type}")
     print(f"Running GP on {len(instances)} {problem_type} instances...")
@@ -174,8 +159,6 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
     # Test the evolved function
     print(f"\nTesting {problem_type} evolved scoring function...")
     
-    problem_config = PROBLEM_REGISTRY.get(problem_type)
-    
     for i, instance in enumerate(instances):
         print(f"\nInstance {i+1}: {instance.name}")
         
@@ -183,9 +166,10 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
         feature_extractor = VRPFeatureExtractor(instance)
         
         # Solve using evolved function
-        gp_solution = problem_config.solve_with_scoring(instance, feature_extractor, func)
-        gp_fitness = problem_config.evaluate_solution(instance, gp_solution)
-        
+        gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func)
+        gp_fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, gp_solution)
+
+        '''
         # Compare with heuristics (map problem types to heuristic format)
         heuristic_problem_type = "vrp" if problem_type == "CVRP" else "vrptw"
         nn_routes = nearest_neighbor_heuristic(instance, problem=heuristic_problem_type)
@@ -193,8 +177,9 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
         
         savings_routes = savings_heuristic(instance, problem=heuristic_problem_type)
         savings_fitness = instance.cost(savings_routes)
-        
+        '''
         print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
+        '''
         print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
         print(f"  Savings: Fitness = {savings_fitness:.2f}")
         
@@ -205,6 +190,7 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
         if savings_fitness > 0:
             improvement_savings = ((savings_fitness - gp_fitness) / savings_fitness) * 100
             print(f"  Improvement over Savings (fitness): {improvement_savings:.2f}%")
+        '''
     
     return best_individual, logbook, pset
 
@@ -212,8 +198,9 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
 def main():
     """Main function to run the genetic programming solver with separate training."""
     # Load instances grouped by problem type
+
     cvrp_instances, vrptw_instances = load_instances_by_type()
-    
+
     print("Loaded VRP instances by type:")
     print(f"CVRP instances: {len(cvrp_instances)}")
     print(f"CVRPTW instances: {len(vrptw_instances)}")
@@ -224,18 +211,19 @@ def main():
         cvrp_results = train_and_test_problem_type(
             instances=cvrp_instances,
             problem_type="CVRP",
-            population_size=30,
-            generations=30
+            population_size=100,
+            generations=50
         )
     
     # Train and test VRPTW model
+    
     vrptw_results = None
     if vrptw_instances:
         vrptw_results = train_and_test_problem_type(
             instances=vrptw_instances,
             problem_type="CVRPTW",
-            population_size=30,
-            generations=30
+            population_size=100,
+            generations=50
         )
     
     print(f"\n{'='*60}")
@@ -250,7 +238,6 @@ def main():
         vrptw_best, vrptw_logbook, vrptw_pset = vrptw_results
         print(f"VRPTW Model: Best fitness = {vrptw_best.fitness.values[0]:.2f}")
     
-    return cvrp_results, vrptw_results
 
 
 if __name__ == "__main__":
