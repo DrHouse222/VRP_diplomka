@@ -12,14 +12,12 @@ charging tech
 distance being different than euclidian
 max travel time
 
-the program could choose num of vehicles
-
-penalize tree size
-
 trucks return to depo multiple times
-
 add/remove features
 
+TODO depot isnt at 0
+
+TODO creating unfinishable datasets
 
 
 

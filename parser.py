@@ -199,7 +199,10 @@ class GVRPMultiTechInstance:
         )
     
 class VRPFeatureExtractor:
-    """Extracts VRP/VRPTW features for request evaluation.
+    """Extracts VRP/VRPTW/GVRP features for request evaluation.
+    
+    Works with VRPInstance, VRPTWInstance, and GVRPMultiTechInstance.
+    Automatically detects instance type and adapts feature extraction.
     """
     
     def __init__(self, instance: VRPInstance):
@@ -220,9 +223,26 @@ class VRPFeatureExtractor:
             self.max_due = float(np.max(self.due_dates)) if len(self.due_dates) > 0 else 1.0
         else:
             self.max_due = 1.0
+        
+        # GVRP fields (optional)
+        self.has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
+        if self.has_battery:
+            self.battery_capacity = getattr(instance, "battery_capacity", 0.0)
+            self.energy_consumption = getattr(instance, "energy_consumption", 1.0)
+            self.node_types = getattr(instance, "node_types", None)
+            if self.node_types is not None:
+                n = len(self.node_types)
+                self.stations = [i for i in range(n) if self.node_types[i] == 2]
+            else:
+                self.stations = []
+        else:
+            self.battery_capacity = float('inf')
+            self.energy_consumption = 1.0
+            self.stations = []
     
     def extract_features(self, request: int, current_route: List[int], 
-                        current_load: float, current_position: int, current_time: float = 0.0) -> Dict[str, float]:
+                        current_load: float, current_position: int, current_time: float = 0.0,
+                        current_battery: float = None, dist_to_nearest_charger: Dict[int, float] = None) -> Dict[str, float]:
         """
         Extract features for a given candidate request.
         
@@ -232,6 +252,8 @@ class VRPFeatureExtractor:
             current_load: Current load of the route
             current_position: Current position in the route (last customer)
             current_time: Current time at the position (used if TW present)
+            current_battery: Current battery level (for GVRP)
+            dist_to_nearest_charger: Dictionary mapping node -> distance to nearest charger (for GVRP)
         
         Returns:
             Dictionary of feature values
@@ -241,25 +263,10 @@ class VRPFeatureExtractor:
         # Basic distance features
         features['dist_to_depot'] = float(self.dist_matrix[self.depot, request])
         features['dist_from_current'] = float(self.dist_matrix[current_position, request])
-        features['dist_to_depot_from_request'] = float(self.dist_matrix[request, self.depot])
         
         # Demand and capacity features
         features['demand'] = float(self.demands[request])
         features['remaining_capacity'] = float(self.capacity - current_load)
-        #features['capacity_utilization'] = (current_load / self.capacity) if self.capacity > 0 else 0.0
-        features['demand_ratio'] = (self.demands[request] / self.capacity) if self.capacity > 0 else 0.0
-        
-        # Route-specific features
-        route_customers = [c for c in current_route if c != self.depot]
-        features['route_length'] = float(len(route_customers))
-        #features['is_empty_route'] = 1.0 if len(route_customers) == 0 else 0.0
-        
-        # Distance-based features
-        if len(current_route) > 2:  # More than just depot
-            last_customer = current_route[-2] if current_route[-1] == self.depot else current_route[-1]
-            features['dist_last_to_depot'] = float(self.dist_matrix[last_customer, self.depot])
-        else:
-            features['dist_last_to_depot'] = 0.0
         
         # Savings-like features
         features['savings'] = (
@@ -274,40 +281,45 @@ class VRPFeatureExtractor:
             arrival = current_time + travel
             ready = float(self.ready_times[request])
             due = float(self.due_dates[request])
-            service = float(self.service_times[request])
-            start_service = max(arrival, ready)
             wait_time = max(0.0, ready - arrival)
-            finish_service = start_service + service
             tw_feasible = 1.0 if arrival <= due else 0.0
             slack_to_due = max(0.0, due - arrival)
-            remaining_tw_from_now = max(0.0, due - current_time - travel)
 
             features['arrival_time'] = arrival
-            features['ready_time'] = ready
             features['due_time'] = due
-            features['service_time'] = service
-            #features['start_service_time'] = start_service
-            features['finish_service_time'] = finish_service
             features['wait_time'] = wait_time
             features['tw_feasible'] = tw_feasible
             features['slack_to_due'] = slack_to_due
-            features['remaining_tw_from_now'] = remaining_tw_from_now
-
-            # Normalized time features
-            denom = self.max_due if self.max_due > 0 else 1.0
-            features['norm_arrival_time'] = arrival / denom
-            features['norm_ready_time'] = ready / denom
-            features['norm_due_time'] = due / denom
-            features['norm_wait_time'] = wait_time / denom
-            features['norm_slack_to_due'] = slack_to_due / denom
-            features['norm_remaining_tw_from_now'] = remaining_tw_from_now / denom
         
-        # Normalized distance features
-        max_dist = float(np.max(self.dist_matrix)) if np.size(self.dist_matrix) > 0 else 1.0
-        if max_dist <= 0:
-            max_dist = 1.0
-        features['norm_dist_to_depot'] = features['dist_to_depot'] / max_dist
-        features['norm_dist_from_current'] = features['dist_from_current'] / max_dist
-        features['norm_savings'] = features['savings'] / max_dist
+        # GVRP battery features (if battery constraints exist)
+        if self.has_battery and current_battery is not None:
+            # Current battery state
+            features['current_battery'] = float(current_battery)
+            
+            # Energy needed to reach customer
+            dist_to_customer = float(self.dist_matrix[current_position, request])
+            energy_to_customer = dist_to_customer * self.energy_consumption
+            features['energy_to_customer'] = energy_to_customer
+            
+            # Feasibility indicator
+            features['is_directly_reachable'] = 1.0 if current_battery >= energy_to_customer else 0.0
+            
+            # Distance to nearest charging station
+            if dist_to_nearest_charger is not None and request in dist_to_nearest_charger:
+                features['dist_to_nearest_charger'] = dist_to_nearest_charger[request]
+                
+                # Safety margin: battery remaining after reaching customer minus energy to nearest charger
+                battery_after_customer = current_battery - energy_to_customer
+                safety_energy = dist_to_nearest_charger[request] * self.energy_consumption
+                safety_margin = battery_after_customer - safety_energy
+                features['battery_safety_margin'] = safety_margin
+            else:
+                features['dist_to_nearest_charger'] = 0.0
+                features['battery_safety_margin'] = 0.0
+        else:
+            # Default values for non-GVRP instances
+            for name in ['current_battery', 'energy_to_customer', 'is_directly_reachable',
+                        'dist_to_nearest_charger', 'battery_safety_margin']:
+                features[name] = 0.0
         
         return features

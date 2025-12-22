@@ -194,3 +194,118 @@ def compute_cost(instance, routes, energy_per_distance: float = 1.0) -> float:
     print("Computed fitness:", fitness)
     
     return fitness
+
+    def solve_with_scoring(self, instance, feature_extractor, scoring_func) -> List[List[int]]:
+        """
+        Construct VRP routes greedily using the GP-evolved scoring function.
+
+        - Works LINEARLY: builds one route at a time.
+        - Uses an UNLIMITED number of trucks: starts a new route whenever the
+          current one cannot be extended (capacity / time-window constraints).
+        """
+        n = instance.dimension
+        depot = getattr(instance, "depot", 0)
+        max_capacity = getattr(instance, "capacity", 0.0)
+        has_tw = self.has_time_windows(instance)
+
+        unvisited = set(range(1, n))  # All customers except depot
+        routes: List[List[int]] = []
+        
+        while unvisited:
+            # Start a new route (new truck)
+            route = [depot]
+            load = 0.0
+            current_node = depot
+            current_time = 0.0
+            
+            while True:
+                candidates = list(unvisited)
+                
+                # Check feasibility and score candidates
+                feasible_candidates: List[int] = []
+                scores: List[float] = []
+                
+                for customer in candidates:
+                    demand = instance.demands[customer]
+
+                    # Capacity feasibility
+                    if load + demand > max_capacity:
+                        continue
+
+                    # Time-window feasibility (if applicable)
+                    if has_tw:
+                        # Arrival at customer
+                        travel = instance.dist_matrix[current_node, customer]
+                    arrival = current_time + travel
+                        due_cust = instance.due_dates[customer]
+                        if arrival > due_cust:
+                            continue  # infeasible at customer
+
+                        # Time at departure from customer (respect ready time + service)
+                        ready_cust = instance.ready_times[customer]
+                        service_cust = instance.service_times[customer]
+                        start_service = max(arrival, ready_cust)
+                        depart_time = start_service + service_cust
+
+                        # Check that we can still return to depot before its due date
+                        return_travel = instance.dist_matrix[customer, depot]
+                        arrival_depot = depart_time + return_travel
+                        due_depot = instance.due_dates[depot]
+                        if arrival_depot > due_depot:
+                            continue  # route would violate depot due date
+
+                    # Extract features for this (route, customer) pair
+                    features = feature_extractor.extract_features(
+                        request=customer,
+                        current_route=route,
+                        current_load=load,
+                        current_position=current_node,
+                        current_time=current_time if has_tw else 0.0,
+                    )
+
+                    # Remaining capacity AFTER adding this customer
+                    remaining_capacity_after = max_capacity - (load + demand)
+                    features["remaining_capacity"] = remaining_capacity_after
+                    
+                    feature_values = self.extract_feature_values(features)
+                    
+                    try:
+                        score = scoring_func(*feature_values)
+                    except Exception:
+                        score = 1e6  # Large penalty on errors
+
+                    feasible_candidates.append(customer)
+                        scores.append(score)
+                
+                # No feasible extension -> close route (truck returns to depot)
+                if not feasible_candidates:
+                    route.append(depot)
+                    break
+                
+                # Pick best candidate (lowest score)
+                best_idx = int(np.argmin(scores))
+                best_customer = feasible_candidates[best_idx]
+
+                # Update route state
+                travel = instance.dist_matrix[current_node, best_customer]
+                if has_tw:
+                arrival = current_time + travel
+                    ready = instance.ready_times[best_customer]
+                    service = instance.service_times[best_customer]
+                    start_service = max(arrival, ready)
+                    current_time = start_service + service
+                else:
+                    current_time += travel
+
+                route.append(best_customer)
+                load += instance.demands[best_customer]
+                current_node = best_customer
+                unvisited.remove(best_customer)
+            
+            routes.append(route)
+        
+        return routes
+    
+    def evaluate_solution(self, instance, solution) -> float:
+        """Evaluate VRP solution quality (scalar fitness)."""
+        return self.compute_cost(instance, solution)
