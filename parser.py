@@ -232,7 +232,7 @@ class VRPFeatureExtractor:
             self.node_types = getattr(instance, "node_types", None)
             if self.node_types is not None:
                 n = len(self.node_types)
-                self.stations = [i for i in range(n) if self.node_types[i] == 2]
+                self.stations = [i for i in range(n) if self.node_types[i] == 2]  # Type 2 are charging stations
             else:
                 self.stations = []
         else:

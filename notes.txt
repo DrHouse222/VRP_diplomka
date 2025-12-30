@@ -1,6 +1,7 @@
 conda env create -f environment.yml
 conda activate gpgomenv
 make
+pip install "numpy<2.0.0"
 
 pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
 
@@ -14,11 +15,6 @@ max travel time
 
 trucks return to depo multiple times
 add/remove features
-
-TODO depot isnt at 0
-
-TODO creating unfinishable datasets
-
 
 
 Functions

@@ -133,7 +133,7 @@ class VRPProblemType:
                 
         return total_distance
 
-    def solve_with_scoring(self, instance, feature_extractor, scoring_func) -> List[List[int]]:
+    def solve_with_scoring(self, instance, feature_extractor, scoring_func, bool_capacity=True) -> List[List[int]]:
         """
         Construct GVRP routes greedily (Sequential Construction) using GP-evolved scoring.
         Handles:
@@ -143,8 +143,12 @@ class VRPProblemType:
           - Automatic Charging Station Insertion
         """
         n = instance.dimension
-        depot = getattr(instance, "depot", 0) #TODO
-        max_capacity = getattr(instance, "capacity", 0.0)
+        depot = getattr(instance, "depot", 0)
+
+        if bool_capacity:
+            max_capacity = getattr(instance, "capacity", 0.0)
+        else:
+            max_capacity = float('inf')
         
         # --- GREEN VRP SETUP ---
         has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
@@ -153,11 +157,10 @@ class VRPProblemType:
         #charge_time_fixed = getattr(instance, "charge_time", 0.0)  # Fixed charging time at stations
         charge_time_fixed = 10.0  # Fixed charging time at stations (for simplicity)
         
-        # Identify Charging Stations (CS)
-        # GVRP instances use node_types: 0=depot, 1=customer, 2=charging_station
+        # Identify Charging Stations GVRP instances use node_types: 0=depot, 1=customer, 2=charging_station
         node_types = getattr(instance, "node_types", None)
         if node_types is not None:
-            stations = [i for i in range(n) if node_types[i] == 2]
+            stations = [i for i in range(n) if node_types[i] == 2]  # Type 2 are charging stations
         else:
             stations = []
         
@@ -176,9 +179,11 @@ class VRPProblemType:
         unvisited = set(range(0, n))
         # Remove depot from unvisited
         unvisited.discard(depot)
-        # Remove stations from 'unvisited' if they are in the list (stations are not customers)
-        for s in stations:
-            if s in unvisited: unvisited.remove(s)
+        # Remove charging stations (type 2) from 'unvisited' - they are not customers
+        if node_types is not None:
+            for i in range(n):
+                if node_types[i] == 2:  # Charging station
+                    unvisited.discard(i)
     
         routes: List[List[int]] = []
         

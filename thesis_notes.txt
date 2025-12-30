@@ -7,4 +7,6 @@ Two possible strategies:
     Per-variant models — maintain a separate GP (pset, training) per VRP variant. => potentially better specialized performance, slightly more management overhead.
 
 using hard time windows
-soft capacity viol
+hard capacity viol
+could do fitness and construction in two types 1: construct whatever, fitness penalizes 2: construct only correct, fitness only distance
+cloning 20% and turning into charging stations

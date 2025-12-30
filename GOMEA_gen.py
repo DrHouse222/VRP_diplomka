@@ -7,10 +7,9 @@ import numpy as np
 from typing import List, Tuple, Dict, Any
 from pyGPGOMEA import GPGOMEARegressor as GPG
 from sklearn.metrics import mean_squared_error
-from parser import VRPInstance, VRPTWInstance, VRPFeatureExtractor
+from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor
 from basic_heuristics import nearest_neighbor_heuristic, savings_heuristic
-from problem_types import ProblemType, CVRPProblemType, CVRPTWProblemType, ProblemTypeRegistry, PROBLEM_REGISTRY
-
+from problem_types import VRPProblemType, VRP_PROBLEM_TYPE
 
 
 class VRPDataGenerator:
@@ -20,11 +19,16 @@ class VRPDataGenerator:
         self.instances = instances
         self.problem_type = problem_type
         
-        # Auto-detect problem type
+        # Auto-detect problem type (for display only; unified model handles all)
         if problem_type == "auto":
-            self.problem_type = PROBLEM_REGISTRY.auto_detect(instances[0])
+            inst = instances[0]
+            if hasattr(inst, "node_types") and hasattr(inst, "battery_capacity"):
+                self.problem_type = "GVRP"
+            elif hasattr(inst, "ready_times") and hasattr(inst, "due_dates"):
+                self.problem_type = "CVRPTW"
+            else:
+                self.problem_type = "CVRP"
         
-        self.problem_config = PROBLEM_REGISTRY.get(self.problem_type)
         self.feature_extractors = [VRPFeatureExtractor(inst) for inst in instances]
     
     def generate_training_data(self, num_samples_per_instance: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
@@ -94,7 +98,7 @@ class VRPDataGenerator:
                 sampled_customers = np.random.choice(remaining_customers, num_samples, replace=False)
                 
                 for customer in sampled_customers:
-                    # Extract features (with current_time for VRPTW)
+                    # Extract features (with current_time for TW; battery handled inside extractor)
                     if self.problem_type == "CVRPTW":
                         features = feature_extractor.extract_features(
                             customer, current_route, current_load, current_position, current_time
@@ -104,8 +108,8 @@ class VRPDataGenerator:
                             customer, current_route, current_load, current_position
                         )
                     
-                    # Convert to array using problem-specific feature extraction
-                    feature_array = np.array(self.problem_config.extract_feature_values(features))
+                    # Convert to array using unified feature extraction
+                    feature_array = np.array(VRP_PROBLEM_TYPE.extract_feature_values(features))
                     
                     # Calculate target score
                     # Use a combination of distance and capacity considerations
@@ -122,7 +126,7 @@ class VRPDataGenerator:
                             # Penalty based on time window tightness
                             tw_penalty = features.get('wait_time', 0) * 0.1
                     
-                    target_score = dist_score + capacity_penalty + savings_bonus + tw_penalty
+                    target_score = dist_score + capacity_penalty + savings_bonus + tw_penalty #TODO replace with a solver
                     
                     X_list.append(feature_array)
                     y_list.append(target_score)
@@ -134,22 +138,8 @@ def solve_with_gp_scoring(instance, feature_extractor: VRPFeatureExtractor,
                          gp_model, problem_type: str = "auto") -> List[List[int]]:
     """
     Solve VRP using GP-evolved scoring function.
-    
-    Args:
-        instance: VRP instance
-        feature_extractor: Feature extractor for the instance
-        gp_model: Trained GP model
-        problem_type: Problem type ("auto", "CVRP", "CVRPTW")
-    
-    Returns:
-        List of routes
     """
-    # Auto-detect problem type
-    if problem_type == "auto":
-        problem_type = PROBLEM_REGISTRY.auto_detect(instance)
-    
-    problem_config = PROBLEM_REGISTRY.get(problem_type)
-    return problem_config.solve_with_scoring(instance, feature_extractor, gp_model.predict)
+    return VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, gp_model.predict)
 
 
 def run_gomea_genetic_programming(instances: List, 
@@ -170,21 +160,27 @@ def run_gomea_genetic_programming(instances: List,
     Returns:
         Trained GP model
     """
-    # Auto-detect problem
+    # Auto-detect problem (for display only)
     if problem_type == "auto":
-        problem_type = PROBLEM_REGISTRY.auto_detect(instances[0])
+        inst = instances[0]
+        if hasattr(inst, "node_types") and hasattr(inst, "battery_capacity"):
+            problem_type = "GVRP"
+        elif hasattr(inst, "ready_times") and hasattr(inst, "due_dates"):
+            problem_type = "CVRPTW"
+        else:
+            problem_type = "CVRP"
     
-    problem_config = PROBLEM_REGISTRY.get(problem_type)
     print(f"Using problem type: {problem_type}")
     print(f"Generating training data from {len(instances)} {problem_type} instances...")
     
     # Generate training data
     data_generator = VRPDataGenerator(instances, problem_type=problem_type)
-    X_train, y_train = data_generator.generate_training_data(num_samples_per_instance=500)
+    X_train, y_train = data_generator.generate_training_data(num_samples_per_instance=100)
     
     print(f"Generated {len(X_train)} training samples")
     print(f"Feature matrix shape: {X_train.shape}")
-    print(f"Target range: [{np.min(y_train):.2f}, {np.max(y_train):.2f}]")
+    if len(y_train) > 0:
+        print(f"Target range: [{np.min(y_train):.2f}, {np.max(y_train):.2f}]")
     
     # Create and configure GP-GOMEA
     print(f"\nRunning GP-GOMEA...")
@@ -223,12 +219,17 @@ def load_instances_by_type():
     
     vrptw_instances = [
         VRPTWInstance("Sets/Vrp-Set-HG/C1_2_2.txt"),
-        VRPTWInstance("Sets/Vrp-Set-HG/C1_2_3.txt"),
-        VRPTWInstance("Sets/Vrp-Set-HG/C1_2_4.txt"),
+        #VRPTWInstance("Sets/Vrp-Set-HG/C1_2_3.txt"),
+        #VRPTWInstance("Sets/Vrp-Set-HG/C1_2_4.txt"),
         # TODO: Add more
     ]
     
-    return cvrp_instances, vrptw_instances
+    gvrp_instances = [
+        GVRPMultiTechInstance("Sets/felipe-et-al-2014/data-A0-N030_red.xml"),
+        # TODO: Add more
+    ]
+    
+    return cvrp_instances, vrptw_instances, gvrp_instances
 
 
 def train_and_test_problem_type(instances, problem_type, time_limit=30, popsize=32, parallel=2):
@@ -261,8 +262,6 @@ def train_and_test_problem_type(instances, problem_type, time_limit=30, popsize=
     # Test the evolved function
     print(f"\nTesting {problem_type} evolved scoring function...")
     
-    problem_config = PROBLEM_REGISTRY.get(problem_type)
-    
     for i, instance in enumerate(instances):
         print(f"\nInstance {i+1}: {instance.name}")
         
@@ -271,27 +270,32 @@ def train_and_test_problem_type(instances, problem_type, time_limit=30, popsize=
         
         # Solve using evolved function
         gp_solution = solve_with_gp_scoring(instance, feature_extractor, gp_model, problem_type)
-        gp_distance, gp_violation = problem_config.evaluate_solution(instance, gp_solution)
+        gp_fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, gp_solution)
+        print(f"  GP-GOMEA Solution: Fitness = {gp_fitness:.2f}")
         
-        # Compare with heuristics (map problem types to heuristic format)
-        heuristic_problem_type = "vrp" if problem_type == "CVRP" else "vrptw"
-        nn_routes = nearest_neighbor_heuristic(instance, problem=heuristic_problem_type)
-        nn_distance, nn_violation = instance.cost(nn_routes)
-        
-        savings_routes = savings_heuristic(instance, problem=heuristic_problem_type)
-        savings_distance, savings_violation = instance.cost(savings_routes)
-        
-        print(f"  GP-GOMEA Solution: Distance = {gp_distance:.2f}, Violation = {gp_violation:.2f}")
-        print(f"  Nearest Neighbor: Distance = {nn_distance:.2f}, Violation = {nn_violation:.2f}")
-        print(f"  Savings: Distance = {savings_distance:.2f}, Violation = {savings_violation:.2f}")
-        
-        if nn_distance > 0:
-            improvement_nn = ((nn_distance - gp_distance) / nn_distance) * 100
-            print(f"  Improvement over NN: {improvement_nn:.2f}%")
-        
-        if savings_distance > 0:
-            improvement_savings = ((savings_distance - gp_distance) / savings_distance) * 100
-            print(f"  Improvement over Savings: {improvement_savings:.2f}%")
+        # Compare with heuristics when applicable (heuristics do not handle GVRP battery constraints)
+        '''
+        if problem_type != "GVRP":
+            heuristic_problem_type = "vrp" if problem_type == "CVRP" else "vrptw"
+            nn_routes = nearest_neighbor_heuristic(instance, problem=heuristic_problem_type)
+            nn_fitness = instance.cost(nn_routes)
+            
+            savings_routes = savings_heuristic(instance, problem=heuristic_problem_type)
+            savings_fitness = instance.cost(savings_routes)
+            
+            print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
+            print(f"  Savings: Fitness = {savings_fitness:.2f}")
+            
+            if nn_fitness > 0:
+                improvement_nn = ((nn_fitness - gp_fitness) / nn_fitness) * 100
+                print(f"  Improvement over NN: {improvement_nn:.2f}%")
+            
+            if savings_fitness > 0:
+                improvement_savings = ((savings_fitness - gp_fitness) / savings_fitness) * 100
+                print(f"  Improvement over Savings: {improvement_savings:.2f}%")
+        else:
+            print("  Heuristic comparison skipped for GVRP (battery not supported by heuristics).")
+        '''
     
     return gp_model
 
@@ -299,11 +303,12 @@ def train_and_test_problem_type(instances, problem_type, time_limit=30, popsize=
 def main():
     """Main function to run the GOMEA genetic programming solver with separate training."""
     # Load instances grouped by problem type
-    cvrp_instances, vrptw_instances = load_instances_by_type()
+    cvrp_instances, vrptw_instances, gvrp_instances = load_instances_by_type()
     
     print("Loaded VRP instances by type:")
     print(f"CVRP instances: {len(cvrp_instances)}")
     print(f"CVRPTW instances: {len(vrptw_instances)}")
+    print(f"GVRP instances: {len(gvrp_instances)}")
     
     # Train and test CVRP model
     cvrp_results = None
@@ -311,8 +316,8 @@ def main():
         cvrp_results = train_and_test_problem_type(
             instances=cvrp_instances,
             problem_type="CVRP",
-            time_limit=30,
-            popsize=32,
+            time_limit=10,
+            popsize=16,
             parallel=2
         )
     
@@ -322,10 +327,22 @@ def main():
         vrptw_results = train_and_test_problem_type(
             instances=vrptw_instances,
             problem_type="CVRPTW",
+            time_limit=10,
+            popsize=16,
+            parallel=2
+        )
+    
+    # Train and test GVRP model
+    '''
+    gvrp_results = None
+    if gvrp_instances:
+        gvrp_results = train_and_test_problem_type(
+            instances=gvrp_instances,
+            problem_type="GVRP",
             time_limit=30,
             popsize=32,
             parallel=2
-        )
+        )'''
     
     print(f"\n{'='*60}")
     print("TRAINING SUMMARY")
@@ -336,8 +353,11 @@ def main():
     
     if vrptw_results:
         print(f"VRPTW Model: Training completed successfully")
-    
-    return cvrp_results, vrptw_results
+    '''
+    if gvrp_results:
+        print(f"GVRP Model: Training completed successfully")
+    '''
+    return cvrp_results, vrptw_results, #gvrp_results
 
 
 if __name__ == "__main__":

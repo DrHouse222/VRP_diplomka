@@ -11,6 +11,7 @@ from deap import base, creator, tools, gp, algorithms
 from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor
 from basic_heuristics import nearest_neighbor_heuristic, savings_heuristic
 from problem_types import VRPProblemType, VRP_PROBLEM_TYPE
+from data_generation import convert_vrptw_to_gvrptw
 
 
 def create_individual(pset):
@@ -37,7 +38,7 @@ def create_toolbox():
     return toolbox, pset
 
 
-def evaluate_individual(individual, instances):
+def evaluate_individual(individual, instances, bool_capacity=True):
     """Evaluate a GP individual on VRP instances."""
     # Compile the individual
     func = gp.compile(expr=individual, pset=VRP_PROBLEM_TYPE.create_primitive_set(gp))
@@ -48,7 +49,7 @@ def evaluate_individual(individual, instances):
         feature_extractor = VRPFeatureExtractor(instance)
         
         # Solve using the GP function
-        solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func)
+        solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
         # Problem type now returns scalar fitness via unified compute_cost
         fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, solution)
         total_fitness += fitness
@@ -61,28 +62,15 @@ def evaluate_individual(individual, instances):
     return (total_fitness,)  # DEAP expects a tuple, not a float
 
 
-def run_genetic_programming(instances: List, 
-                          population_size: int = 50, generations: int = 50) -> Tuple[Any, Any, Any, str]:
+def run_genetic_programming(instances, bool_capacity = True, population_size = 50, generations = 50):
     """Run genetic programming to evolve VRP scoring function."""
-    
-    # Auto-detect problem type (for display purposes)
-    instance = instances[0]
-    if hasattr(instance, 'node_types') and hasattr(instance, 'battery_capacity'):
-        problem_type = "GVRP"
-    elif hasattr(instance, 'ready_times') and hasattr(instance, 'due_dates'):
-        problem_type = "CVRPTW"
-    else:
-        problem_type = "CVRP"
-    
-    print(f"Using problem type: {problem_type}")
-    print(f"Running GP on {len(instances)} {problem_type} instances...")
     
     # Create toolbox
     toolbox, pset = create_toolbox()
     
     # Create evaluation function
     def evaluate_with_problem_type(individual):
-        return evaluate_individual(individual, instances)
+        return evaluate_individual(individual, instances, bool_capacity)
     
     # Register evaluation function
     toolbox.register("evaluate", evaluate_with_problem_type)
@@ -135,7 +123,7 @@ def load_instances_by_type():
     return cvrp_instances, vrptw_instances, gvrp_instances
 
 
-def train_and_test_problem_type(instances, problem_type, population_size=30, generations=30):
+def train_and_test_problem_type(instances, problem_type, bool_capacity=True, population_size=30, generations=30):
     """Train and test a specific problem type."""
     if not instances:
         print(f"No {problem_type} instances available, skipping...")
@@ -151,6 +139,7 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
     # Run genetic programming
     best_individual, logbook, pset = run_genetic_programming(
         instances=instances,
+        bool_capacity=bool_capacity,
         population_size=population_size,
         generations=generations
     )
@@ -170,7 +159,7 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
         feature_extractor = VRPFeatureExtractor(instance)
         
         # Solve using evolved function
-        gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func)
+        gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
         gp_fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, gp_solution)
 
         '''
@@ -200,62 +189,47 @@ def train_and_test_problem_type(instances, problem_type, population_size=30, gen
 
 
 def main():
-    """Main function to run the genetic programming solver with separate training."""
-    # Load instances grouped by problem type
-    cvrp_instances, vrptw_instances, gvrp_instances = load_instances_by_type()
+    # Choose variants
+    bool_capacity = True
+    bool_TW = True
+    bool_green = True
 
-    print("Loaded VRP instances by type:")
-    print(f"CVRP instances: {len(cvrp_instances)}")
-    print(f"CVRPTW instances: {len(vrptw_instances)}")
-    print(f"GVRP instances: {len(gvrp_instances)}")
-    
-    # Train and test CVRP model
-    cvrp_results = None
-    if cvrp_instances:
-        cvrp_results = train_and_test_problem_type(
-            instances=cvrp_instances,
-            problem_type="CVRP", # only for printing
-            population_size=1,
-            generations=1
+    # Load instances
+    cvrp_instances, vrptw_instances, gvrp_instances = load_instances_by_type()
+    results = None
+
+    # Mapping: (green, TW) -> (Problem Name, Data List)
+    problem_map = {
+        (False, False): ("CVRP", cvrp_instances),
+        (True, False):  ("VRPTW", vrptw_instances),
+        (False, True):  ("GVRP", gvrp_instances),
+        (True, True):   ("G-VRPTW", convert_vrptw_to_gvrptw(vrptw_instances))
+    }
+
+    print(vrptw_instances)
+    print(convert_vrptw_to_gvrptw(vrptw_instances))
+
+    problem_type, instances = problem_map.get((bool_TW, bool_green))
+
+    if instances:
+        results = train_and_test_problem_type(
+            instances=instances,
+            problem_type=problem_type,
+            bool_capacity=bool_capacity,
+            population_size=10,
+            generations=10
         )
-    
-    # Train and test VRPTW model
-    vrptw_results = None
-    if vrptw_instances:
-        vrptw_results = train_and_test_problem_type(
-            instances=vrptw_instances,
-            problem_type="CVRPTW",
-            population_size=1,
-            generations=1
-        )
-    
-    # Train and test GVRP model
-    gvrp_results = None
-    if gvrp_instances:
-        gvrp_results = train_and_test_problem_type(
-            instances=gvrp_instances,
-            problem_type="GVRP",
-            population_size=1,
-            generations=1
-        )
-    
+    else:
+        print(f"No instances loaded for {problem_type}")
+            
     print(f"\n{'='*60}")
     print("TRAINING SUMMARY")
     print(f"{'='*60}")
     
-    if cvrp_results:
-        cvrp_best, cvrp_logbook, cvrp_pset = cvrp_results
-        print(f"CVRP Model: Best fitness = {cvrp_best.fitness.values[0]:.2f}")
+    if results:
+        vrp_best, vrp_logbook, vrp_pset = results
+        print(f"{problem_type} Model: Best fitness = {vrp_best.fitness.values[0]:.2f}")
     
-    if vrptw_results:
-        vrptw_best, vrptw_logbook, vrptw_pset = vrptw_results
-        print(f"VRPTW Model: Best fitness = {vrptw_best.fitness.values[0]:.2f}")
-    
-    if gvrp_results:
-        gvrp_best, gvrp_logbook, gvrp_pset = gvrp_results
-        print(f"GVRP Model: Best fitness = {gvrp_best.fitness.values[0]:.2f}")
-    
-
 
 if __name__ == "__main__":
     main()
