@@ -109,9 +109,6 @@ class VRPProblemType:
     def compute_cost(self, instance, routes) -> float:
         """
         Compute cost for VRP solution.
-        
-        Handles CVRP, CVRPTW, and GVRP instances.
-        For GVRP: routes may include charging stations (node_type == 2).
         Returns total distance traveled (including detours to charging stations).
         """
         total_distance = 0.0
@@ -155,7 +152,7 @@ class VRPProblemType:
         battery_cap = getattr(instance, "battery_capacity", float('inf'))
         energy_per_dist = getattr(instance, "energy_consumption", 1.0)  # Energy per unit distance
         #charge_time_fixed = getattr(instance, "charge_time", 0.0)  # Fixed charging time at stations
-        charge_time_fixed = 10.0  # Fixed charging time at stations (for simplicity)
+        charge_time_fixed = 20.0  # Fixed charging time at stations (for simplicity)
         
         # Identify Charging Stations GVRP instances use node_types: 0=depot, 1=customer, 2=charging_station
         node_types = getattr(instance, "node_types", None)
@@ -442,10 +439,6 @@ class VRPProblemType:
             routes.append(route)
         
         return routes
-    
-    def evaluate_solution(self, instance, solution) -> float:
-        """Evaluate VRP solution quality (scalar fitness)."""
-        return self.compute_cost(instance, solution)
 
 # Global instance - only one problem type needed
 VRP_PROBLEM_TYPE = VRPProblemType()

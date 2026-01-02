@@ -51,7 +51,7 @@ def evaluate_individual(individual, instances, bool_capacity=True):
         # Solve using the GP function
         solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
         # Problem type now returns scalar fitness via unified compute_cost
-        fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, solution)
+        fitness = VRP_PROBLEM_TYPE.compute_cost(instance, solution)
         total_fitness += fitness
     
     # Add tree size penalty to encourage simpler trees
@@ -160,30 +160,28 @@ def train_and_test_problem_type(instances, problem_type, bool_capacity=True, pop
         
         # Solve using evolved function
         gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
-        gp_fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, gp_solution)
+        gp_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, gp_solution)
 
-        '''
         # Compare with heuristics (map problem types to heuristic format)
-        heuristic_problem_type = "vrp" if problem_type == "CVRP" else "vrptw"
-        nn_routes = nearest_neighbor_heuristic(instance, problem=heuristic_problem_type)
-        nn_fitness = instance.cost(nn_routes)
+        nn_routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_capacity)
+        nn_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, nn_routes)
         
-        savings_routes = savings_heuristic(instance, problem=heuristic_problem_type)
-        savings_fitness = instance.cost(savings_routes)
-        '''
+        #savings_routes = savings_heuristic(instance, problem=heuristic_problem_type)
+        #savings_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, savings_routes)
+        
         print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
-        '''
+        
         print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
-        print(f"  Savings: Fitness = {savings_fitness:.2f}")
+        #print(f"  Savings: Fitness = {savings_fitness:.2f}")
         
         if nn_fitness > 0:
             improvement_nn = ((nn_fitness - gp_fitness) / nn_fitness) * 100
             print(f"  Improvement over NN (fitness): {improvement_nn:.2f}%")
         
-        if savings_fitness > 0:
-            improvement_savings = ((savings_fitness - gp_fitness) / savings_fitness) * 100
-            print(f"  Improvement over Savings (fitness): {improvement_savings:.2f}%")
-        '''
+        #if savings_fitness > 0:
+        #    improvement_savings = ((savings_fitness - gp_fitness) / savings_fitness) * 100
+        #    print(f"  Improvement over Savings (fitness): {improvement_savings:.2f}%")
+        
     
     return best_individual, logbook, pset
 
@@ -191,8 +189,8 @@ def train_and_test_problem_type(instances, problem_type, bool_capacity=True, pop
 def main():
     # Choose variants
     bool_capacity = True
-    bool_TW = True
-    bool_green = True
+    bool_TW = False
+    bool_green = False
 
     # Load instances
     cvrp_instances, vrptw_instances, gvrp_instances = load_instances_by_type()
@@ -206,9 +204,6 @@ def main():
         (True, True):   ("G-VRPTW", convert_vrptw_to_gvrptw(vrptw_instances))
     }
 
-    print(vrptw_instances)
-    print(convert_vrptw_to_gvrptw(vrptw_instances))
-
     problem_type, instances = problem_map.get((bool_TW, bool_green))
 
     if instances:
@@ -216,8 +211,8 @@ def main():
             instances=instances,
             problem_type=problem_type,
             bool_capacity=bool_capacity,
-            population_size=10,
-            generations=10
+            population_size=50,
+            generations=50
         )
     else:
         print(f"No instances loaded for {problem_type}")

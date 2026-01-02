@@ -270,7 +270,7 @@ def train_and_test_problem_type(instances, problem_type, time_limit=30, popsize=
         
         # Solve using evolved function
         gp_solution = solve_with_gp_scoring(instance, feature_extractor, gp_model, problem_type)
-        gp_fitness = VRP_PROBLEM_TYPE.evaluate_solution(instance, gp_solution)
+        gp_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, gp_solution)
         print(f"  GP-GOMEA Solution: Fitness = {gp_fitness:.2f}")
         
         # Compare with heuristics when applicable (heuristics do not handle GVRP battery constraints)

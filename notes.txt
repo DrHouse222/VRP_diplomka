@@ -54,3 +54,6 @@ CR Critical Ratio x
 RTT Route total time x
 NRTT Route total time after adding the consider customer x
 U Route utilization x
+
+
+fix the nearest neighbour heuristick so it works with all the variants, take inspirations from solve_with_scoring@basic_heuristics.py @problem_types.py 
