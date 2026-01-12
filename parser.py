@@ -316,10 +316,5 @@ class VRPFeatureExtractor:
             else:
                 features['dist_to_nearest_charger'] = 0.0
                 features['battery_safety_margin'] = 0.0
-        else:
-            # Default values for non-GVRP instances
-            for name in ['current_battery', 'energy_to_customer', 'is_directly_reachable',
-                        'dist_to_nearest_charger', 'battery_safety_margin']:
-                features[name] = 0.0
-        
+    
         return features

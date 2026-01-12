@@ -7,14 +7,11 @@ pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
 
 
 TODO
-in parser connect the costs to the same function with if statements to differentiate problem types
-
 charging tech
 distance being different than euclidian
-max travel time
-
-trucks return to depo multiple times
 add/remove features
+
+TODO do parralel for num trucks and if customer remains do serial
 
 
 Functions
@@ -54,6 +51,3 @@ CR Critical Ratio x
 RTT Route total time x
 NRTT Route total time after adding the consider customer x
 U Route utilization x
-
-
-fix the nearest neighbour heuristick so it works with all the variants, take inspirations from solve_with_scoring@basic_heuristics.py @problem_types.py 

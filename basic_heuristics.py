@@ -32,7 +32,18 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
     # GVRP setup
     battery_cap = getattr(instance, "battery_capacity", float('inf')) if has_battery else float('inf')
     energy_per_dist = getattr(instance, "energy_consumption", 1.0)
-    charge_time_fixed = 20.0  # Fixed charging time at stations
+    has_max_travel_time = hasattr(instance, "max_travel_time")
+    max_travel_time = getattr(instance, "max_travel_time", float('inf')) if has_max_travel_time else float('inf')
+    # Linear charging: time = charge_rate * energy_needed
+    base_charge_time = 100.0  # Time to charge from 0% to 100%
+    charge_rate = base_charge_time / battery_cap if has_battery and battery_cap > 0 else 0.0
+    
+    def compute_charge_time(current_batt):
+        """Compute linear charging time based on current battery level."""
+        if not has_battery:
+            return 0.0
+        energy_needed = battery_cap - current_batt
+        return charge_rate * energy_needed
     
     # Identify charging stations (type 2)
     node_types = getattr(instance, "node_types", None)
@@ -127,18 +138,29 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                 if not valid_move_found and has_battery and stations:
                     min_total_dist = float('inf')
                     
-                    for station in stations:
-                        d1 = instance.dist_matrix[current_node, station]
-                        d2 = instance.dist_matrix[station, customer]
+                    # Pre-compute distance from current_node to all stations (cache for this iteration)
+                    station_dists = [(s, instance.dist_matrix[current_node, s]) for s in stations]
+                    # Sort by distance to current node (closer stations first - likely to be better)
+                    station_dists.sort(key=lambda x: x[1])
+                    
+                    for station, d1 in station_dists:
+                        # Early skip if this station is already worse than best found
+                        if d1 >= min_total_dist:
+                            break  # Since stations are sorted, all remaining are worse
+                        
                         e1 = d1 * energy_per_dist
+                        if current_battery < e1:
+                            continue
+                        
+                        d2 = instance.dist_matrix[station, customer]
                         e2 = d2 * energy_per_dist
                         total_dist = d1 + d2
                         
-                        if current_battery < e1:
-                            continue
-                        if battery_cap < e2:
-                            continue
+                        # Early skip if total distance is worse than best
                         if total_dist >= min_total_dist:
+                            continue
+                        
+                        if battery_cap < e2:
                             continue
                         
                         # Safety check at destination
@@ -147,7 +169,10 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                         
                         # Time window check
                         arrival_at_station = current_time + d1
-                        dept_from_station = arrival_at_station + charge_time_fixed
+                        # Calculate battery level when arriving at station
+                        batt_at_station = current_battery - (d1 * energy_per_dist)
+                        charge_time = compute_charge_time(batt_at_station)
+                        dept_from_station = arrival_at_station + charge_time
                         arrival_at_cust = dept_from_station + d2
                         
                         if has_tw:
@@ -157,8 +182,17 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                             service = instance.service_times[customer]
                             dept_cust = max(arrival_at_cust, ready) + service
                             dist_home = instance.dist_matrix[customer, depot]
-                            if dept_cust + dist_home > instance.due_dates[depot]:
+                            arrival_at_depot = dept_cust + dist_home
+                            if arrival_at_depot > instance.due_dates[depot] or (has_max_travel_time and arrival_at_depot > max_travel_time):
                                 continue
+                        else:
+                            # For non-TW, check max travel time (if applicable)
+                            if has_max_travel_time:
+                                service = getattr(instance, "service_times", np.zeros(n))[customer] if hasattr(instance, "service_times") else 0.0
+                                dist_home = instance.dist_matrix[customer, depot]
+                                arrival_at_depot = arrival_at_cust + service + dist_home
+                                if arrival_at_depot > max_travel_time:
+                                    continue
                         
                         valid_move_found = True
                         min_total_dist = total_dist
@@ -189,8 +223,15 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                         best_station = None
                         min_total_dist = float('inf')
                         
-                        for station in stations:
-                            d1 = instance.dist_matrix[current_node, station]
+                        # Pre-compute and sort stations by distance to current node
+                        station_dists = [(s, instance.dist_matrix[current_node, s]) for s in stations]
+                        station_dists.sort(key=lambda x: x[1])
+                        
+                        for station, d1 in station_dists:
+                            # Early termination: if d1 alone is worse than best total, skip
+                            if d1 >= min_total_dist:
+                                break
+                            
                             d2 = instance.dist_matrix[station, depot]
                             e1 = d1 * energy_per_dist
                             e2 = d2 * energy_per_dist
@@ -200,25 +241,32 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                             if battery_cap < e2:
                                 continue
                             
+                            total_dist = d1 + d2
+                            if total_dist >= min_total_dist:
+                                continue
+                            
                             if has_tw:
                                 arrival_stat = current_time + d1
-                                dept_stat = arrival_stat + charge_time_fixed
+                                # Calculate battery level when arriving at station
+                                batt_at_station = current_battery - (d1 * energy_per_dist)
+                                charge_time = compute_charge_time(batt_at_station)
+                                dept_stat = arrival_stat + charge_time
                                 arrival_depot = dept_stat + d2
                                 if arrival_depot > instance.due_dates[depot]:
                                     continue
                             
-                            total_dist = d1 + d2
-                            if total_dist < min_total_dist:
-                                min_total_dist = total_dist
-                                best_station = station
+                            min_total_dist = total_dist
+                            best_station = station
                         
                         if best_station is not None:
                             route.append(best_station)
                             energy_to_station = instance.dist_matrix[current_node, best_station] * energy_per_dist
                             current_battery -= energy_to_station
                             current_time += instance.dist_matrix[current_node, best_station]
+                            # Charge at station (linear charging time)
+                            charge_time = compute_charge_time(current_battery)
                             current_battery = battery_cap
-                            current_time += charge_time_fixed
+                            current_time += charge_time
                             current_node = best_station
                 
                 route.append(depot)
@@ -270,8 +318,10 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                 energy_to_station = info['station_dist'] * energy_per_dist
                 current_battery -= energy_to_station
                 current_time += info['station_dist']
+                # Charge at station (linear charging time)
+                charge_time = compute_charge_time(current_battery)
                 current_battery = battery_cap
-                current_time += charge_time_fixed
+                current_time += charge_time
                 travel_to_cust = instance.dist_matrix[station, best_customer]
             else:
                 travel_to_cust = info['dist']
