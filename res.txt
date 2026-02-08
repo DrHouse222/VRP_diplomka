@@ -1,0 +1,31 @@
+VRP 5 50 50
+Training Avg Improvement: 9.07%
+Testing Avg Improvement : 7.85%
+
+CVRP 5 50 50
+Training Avg Improvement: 14.67%
+Testing Avg Improvement : 6.91%
+
+VRPTW 5 20 20
+Training Avg Improvement: 3.37%
+Testing Avg Improvement : 3.61%
+
+CVRPTW 5 20 20
+Training Avg Improvement: 31.79%
+Testing Avg Improvement : 28.21%
+
+GVRP 5 50 50
+Training Avg Improvement: 5.31%
+Testing Avg Improvement : 2.26%
+
+GCVRP 5 50 50
+Training Avg Improvement: 3.64%
+Testing Avg Improvement : 4.66%
+
+GVRPTW 5 20 20
+Training Avg Improvement: 44.21%
+Testing Avg Improvement : 31.12%
+
+GCVRPTW 5 20 20
+Training Avg Improvement: 30.56%
+Testing Avg Improvement : 22.24%

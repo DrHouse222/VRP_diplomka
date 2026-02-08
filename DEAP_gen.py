@@ -50,20 +50,16 @@ def evaluate_individual(individual, instances, bool_capacity=True):
         feature_extractor = VRPFeatureExtractor(instance)
         
         # Solve using the GP function
-        if solve_with_scoring == 1:
-            solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
-        else:
-            solution = VRP_PROBLEM_TYPE.solve_with_scoring2(instance, feature_extractor, func, bool_capacity)
-        # Problem type now returns scalar fitness via unified compute_cost
+        solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
         fitness = VRP_PROBLEM_TYPE.compute_cost(instance, solution)
         total_fitness += fitness
     
-    # Add tree size penalty to encourage simpler trees
+    # Add tree size penalty
     tree_size = len(individual)
-    tree_size_penalty = 0.1 * tree_size  # Small penalty per node
+    tree_size_penalty = 0.1 * tree_size 
     total_fitness += tree_size_penalty
     
-    return (total_fitness,)  # DEAP expects a tuple, not a float
+    return (total_fitness,)
 
 
 def run_genetic_programming(instances, bool_capacity = True, population_size = 50, generations = 50):
@@ -104,7 +100,6 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
         ind.fitness.values = fit
     hof.update(population)
     
-    # Evolution loop with elitism: combine population + offspring, select best
     logbook = tools.Logbook()
     logbook.header = ['gen', 'nevals'] + (mstats.fields if mstats else [])
     
@@ -114,7 +109,7 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
     if mstats:
         print(logbook.stream)
     
-    # Evolution loop with (μ+λ) elitism
+    # Evolution loop
     for gen in range(1, generations + 1):
         # Select and clone the next generation individuals
         offspring = toolbox.select(population, len(population))
@@ -142,7 +137,6 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
         hof.update(offspring)
         
         # ELITISM: Select best individuals from population + offspring (μ+λ selection)
-        # This guarantees the best individual is always preserved
         population[:] = tools.selBest(population + offspring, len(population))
         
         # Append the current generation statistics to the logbook
@@ -151,13 +145,13 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
         if mstats:
             print(logbook.stream)
     
-    # Get best individual from Hall of Fame (guaranteed to be the best ever found)
+    # Get best individual from Hall of Fame
     best_individual = hof[0]
     
     return best_individual, logbook, pset
 
 
-def train_and_test_problem_type(all_instances, problem_type, n_train=6, bool_capacity=True, population_size=30, generations=30):
+def train_and_test_problem_type(all_instances, problem_type, n_train=6, n_test=-1, bool_capacity=True, population_size=30, generations=30):
     """
     Train on 'n_train' instances, Test on the rest.
     Prints detailed fitness comparison for every instance.
@@ -168,14 +162,20 @@ def train_and_test_problem_type(all_instances, problem_type, n_train=6, bool_cap
     
     # --- 1. THE SPLIT ---
     total_count = len(all_instances)
-    
-    if n_train >= total_count:
-        train_instances = all_instances
-        test_instances = []
-        print(f"Warning: Using ALL {total_count} instances for training (Overfitting mode).")
+    if n_test == -1:
+        if n_train >= total_count:
+            train_instances = all_instances
+            test_instances = []
+            print(f"Warning: Using ALL {total_count} instances for training (Overfitting mode).")
+        else:
+            train_instances = all_instances[:n_train]
+            test_instances = all_instances[n_train:]
     else:
+        if n_train + n_test > total_count:
+            n_test = total_count - n_train
+            print(f"Warning: Adjusted n_test to {n_test} due to insufficient instances.")
         train_instances = all_instances[:n_train]
-        test_instances = all_instances[n_train:]
+        test_instances = all_instances[n_train:n_train + n_test]
     
     print(f"\n{'='*60}")
     print(f"Experiment Setup: {problem_type}")
@@ -201,10 +201,6 @@ def train_and_test_problem_type(all_instances, problem_type, n_train=6, bool_cap
     def evaluate_set(name, dataset):
         if not dataset:
             return 0.0
-            
-        print(f"\n{'-'*30}")
-        print(f"Evaluating on {name} Set")
-        print(f"{'-'*30}")
         
         total_improvement = 0.0
         
@@ -216,10 +212,7 @@ def train_and_test_problem_type(all_instances, problem_type, n_train=6, bool_cap
             feature_extractor = VRPFeatureExtractor(instance)
             
             # Solve using GP (Evolved Rule)
-            if solve_with_scoring == 1:
-                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
-            else:
-                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring2(instance, feature_extractor, func, bool_capacity)
+            gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
             gp_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, gp_routes)
 
             # Solve using Baseline (Nearest Neighbor)
@@ -235,16 +228,15 @@ def train_and_test_problem_type(all_instances, problem_type, n_train=6, bool_cap
             time_end = time.time()
             elapsed = time_end - time_start
             
-            #print(f"\nInstance {i+1}: {instance.name}")
+            print(f"\nInstance {i+1}: {instance.name}")
             #print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
             #print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
             #print(f"  Improvement over NN (fitness): {imp:.2f}%")
-            #print(f"  Time taken: {elapsed:.2f} seconds")
+            print(f"  Time taken: {elapsed:.2f} seconds")
             
             total_improvement += imp
             
         avg_imp = total_improvement / len(dataset)
-        print(f"\n>> AVERAGE IMPROVEMENT on {name}: {avg_imp:.2f}%")
         return avg_imp
 
     # --- 4. RUN EVALUATION ---
@@ -410,15 +402,12 @@ def load_instances_by_type():
             print(f"Warning: Failed to load {filepath}: {e}")
     
     vrptw_instances = []
-    
     # Load first 30 .txt files from Sets/Vrp-Set-HG
-    # Use natural sort (numeric-aware) so C_1_B comes before C_10_B
     def natural_sort_key(filename):
         """Natural sort key that handles numbers in filenames."""
         import re
         return [int(text) if text.isdigit() else text.lower() 
                 for text in re.split(r'(\d+)', os.path.basename(filename))]
-    
     txt_files = sorted(glob.glob("Sets/Vrp-Set-HG/*.txt"), key=natural_sort_key)[:30]
     del txt_files[25]
     for filepath in txt_files:
@@ -429,7 +418,6 @@ def load_instances_by_type():
     
     
     gvrp_instances = []
-    
     # Load all .xml files from Sets/felipe-et-al-2014
     xml_files = sorted(glob.glob("Sets/felipe-et-al-2014/*.xml"))
     for filepath in xml_files:
@@ -438,16 +426,12 @@ def load_instances_by_type():
         except Exception as e:
             print(f"Warning: Failed to load {filepath}: {e}")
     
-    
     print(f"Loaded {len(cvrp_instances)} CVRP instances")
     print(f"Loaded {len(vrptw_instances)} VRPTW instances")
     print(f"Loaded {len(gvrp_instances)} GVRP instances")
     
     return cvrp_instances, vrptw_instances, gvrp_instances
 
-
-
-solve_with_scoring = 2
 
 def main():
     # Choose variants
@@ -476,9 +460,10 @@ def main():
             all_instances=instances,
             problem_type=problem_type,
             bool_capacity=bool_capacity,
-            n_train=5,
-            population_size=20,
-            generations=20
+            n_train=1,
+            n_test=-1,
+            population_size=1,
+            generations=1
         )
     else:
         print(f"No instances loaded for {problem_type}")
@@ -499,15 +484,12 @@ def main():
             instance = instances[0]
             feature_extractor = VRPFeatureExtractor(instance)
             func = gp.compile(expr=vrp_best, pset=vrp_pset)
-            if solve_with_scoring == 1:
-                gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
-            else:
-                gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring2(instance, feature_extractor, func, bool_capacity)
+            gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
             gp_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, gp_solution)
             
             if gp_solution and len(gp_solution) > 0:
                 plot_route(instance, gp_solution, title=f"{instance.name}", fitness=gp_fitness)
-                #plt.show()
+                plt.show()
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ distance being different than euclidian
 add/remove features
 
 TODO do parralel for num trucks and if customer remains do serial
-
+TODO download classic solomon dataset, download different GVRP dataset
 
 Functions
 + Addition

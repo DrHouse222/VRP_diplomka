@@ -1,7 +1,6 @@
 using VRPLIB for parsing
 vrplib does support Solomon format with the instance_format="solomon" parameter. T
 
-
 Two possible strategies:
     Superset model — use one GP model trained on a superset of features (all variants). Variant-specific features are masked/filled with safe defaults when not present. Add a variant indicator feature. => easier deployment, generalization across variants.
     Per-variant models — maintain a separate GP (pset, training) per VRP variant. => potentially better specialized performance, slightly more management overhead.
@@ -10,35 +9,62 @@ using hard time windows
 hard capacity viol
 could do fitness and construction in two types 1: construct whatever, fitness penalizes 2: construct only correct, fitness only distance
 cloning 20% and turning into charging stations
-
 first evaluate feasibility then select and the other way, capacity check first
-
-
-Start: Create a list of all unvisited customers.
-Main Loop (Repeat until all customers are visited):
+Start:  Create a list of all unvisited customers.
+        pre-calculate distance to nearest station for all nodes
+Main Loop (until all customers are visited):
     Get a New Truck: Start a new empty route at the Depot.
     Route Building Loop (While truck can still work):
 
-        Identify Candidates: Look at all unvisited customers.
+        Identify Candidates: For all unvisited customers.
             Filter: Ignore customers who are too heavy for the current truck.
-            Filter: Ignore customers who are too far for the current battery.
+            Try Direct Move
+                Filter: Ignore customers who are too far for the current time.
+                
+            If Direct fails, Try Via Station
+                Find station minimizing detour
+                check battery, charging time
+                Filter: Ignore customers who are too far for the current time.
 
         Check for End of Route:
             If no customers fit, or if the battery is low, drive the truck back to the Depot (recharging on the way if needed).
-            Stop this route and go back to step 2 (get a new truck).
+            Stop this route and go back to get a new truck.
 
         Score Candidates:
-            For every valid customer, calculate a Score using the input Scoring Rule.
-            Example: If the rule is "Minimize Distance", the closest customer gets the best score.
-
-        Select Best Customer:
+            For every valid customer, calculate a Score.
             Pick the customer with the best score.
 
         Execute Move:
-            Drive to that customer.
-            (If the battery is too low to reach them directly, insert a visit to a Charging Station first).
+            Drive to that customer. (If the battery is too low to reach them directly, insert a visit to a Charging Station first).
             Add the customer to the route.
             Update the truck's remaining load and battery.
             Mark the customer as "Visited."
 
 Finish: Return the list of all completed routes.
+
+
+
+
+FUNCTION run_genetic_programming(instances, pop_size, gens):
+
+    INITIALIZE population, statistics, hall_of_fame
+    EVALUATE fitness of initial population
+    UPDATE hall_of_fame
+
+    FOR gen = 1 TO gens:
+        # 1. Selection & Variation
+        offspring = TOURNAMENT_SELECT(population, size=pop_size)
+        APPLY CROSSOVER to offspring (Prob=0.5)
+        APPLY MUTATION to offspring (Prob=0.1)
+
+        # 2. Evaluation
+        EVALUATE individuals in offspring with new genomes
+
+        # 3. Survival (Mu + Lambda Elitism)
+        UPDATE hall_of_fame with offspring
+        # Keep the absolute best N individuals from both parents and children
+        population = SELECT_BEST(population + offspring, size=pop_size)
+
+        LOG statistics for gen
+
+    RETURN hall_of_fame[0] (Best individual found)

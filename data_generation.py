@@ -107,7 +107,7 @@ class GVRPTWInstance:
         )
 
 
-def convert_vrptw_to_gvrptw(vrptw_instances, battery_capacity = 160, energy_consumption = 1.0, percent_hybrid = 0.2):
+def convert_vrptw_to_gvrptw(vrptw_instances, battery_capacity = 200, energy_consumption = 1.0, percent_hybrid = 0.2):
     #Convert a VRPTW instance to a GVRPTW instance
     gvrp_instances = []
     for vrptw_instance in vrptw_instances:
