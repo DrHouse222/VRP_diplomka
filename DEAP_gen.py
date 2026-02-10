@@ -6,7 +6,7 @@ Genetic Programming solution for VRP variants using DEAP framework.
 import numpy as np
 from deap import base, creator, tools, gp, algorithms
 from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor
-from basic_heuristics import nearest_neighbor_heuristic, savings_heuristic
+from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic
 from problem_types import VRP_PROBLEM_TYPE
 from data_generation import convert_vrptw_to_gvrptw
 import time
@@ -202,8 +202,9 @@ def train_and_test_problem_type(all_instances, problem_type, n_train=6, n_test=-
         if not dataset:
             return 0.0
         
-        total_improvement = 0.0
-        
+        total_improvementNN = 0.0
+        total_improvementS = 0.0
+
         for i, instance in enumerate(dataset):
 
             time_start = time.time()
@@ -218,45 +219,54 @@ def train_and_test_problem_type(all_instances, problem_type, n_train=6, n_test=-
             # Solve using Baseline (Nearest Neighbor)
             nn_routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_capacity)
             nn_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, nn_routes)
+
+            s_routes = saving_heuristic(instance, bool_capacity=bool_capacity)
+            s_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, s_routes)
             
             # Calculate Improvement
             if nn_fitness > 0:
-                imp = ((nn_fitness - gp_fitness) / nn_fitness) * 100
+                impNN = ((nn_fitness - gp_fitness) / nn_fitness) * 100
             else:
-                imp = 0.0
+                impNN = 0.0
+            if s_fitness > 0:
+                impS = ((s_fitness - gp_fitness) / s_fitness) * 100
+            else:                
+                impS = 0.0
 
             time_end = time.time()
             elapsed = time_end - time_start
             
             print(f"\nInstance {i+1}: {instance.name}")
-            #print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
-            #print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
-            #print(f"  Improvement over NN (fitness): {imp:.2f}%")
+            print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
+            print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
+            print(f"  Saving Heuristic : Fitness = {s_fitness:.2f}")
+            print(f"  Improvement over NN (fitness): {impNN:.2f}%")
+            print(f"  Improvement over Saving (fitness): {impS:.2f}%")
             print(f"  Time taken: {elapsed:.2f} seconds")
             
-            total_improvement += imp
+            total_improvementNN += impNN
+            total_improvementS += impS
             
-        avg_imp = total_improvement / len(dataset)
-        return avg_imp
+        return total_improvementNN / len(dataset), total_improvementS / len(dataset)
 
     # --- 4. RUN EVALUATION ---
     
     # Evaluate Training Data
-    train_imp = evaluate_set("TRAINING", train_instances)
+    train_impNN, train_impS = evaluate_set("TRAINING", train_instances)
     
     # Evaluate Testing Data (if any)
     if test_instances:
-        test_imp = evaluate_set("TESTING", test_instances)
+        test_impNN, test_impS = evaluate_set("TESTING", test_instances)
     else:
-        test_imp = 0.0
+        test_impNN = 0.0
+        test_impS = 0.0
     
     print(f"\n{'='*60}")
     print(f"FINAL SUMMARY")
-    print(f"Training Avg Improvement: {train_imp:.2f}%")
-    if test_instances:
-        print(f"Testing Avg Improvement : {test_imp:.2f}%")
-    else:
-        print(f"Testing Avg Improvement : N/A")
+    print(f"Training Avg Improvement (NN): {train_impNN:.2f}%")
+    print(f"Training Avg Improvement (Saving): {train_impS:.2f}%")
+    print(f"Testing Avg Improvement (NN): {test_impNN:.2f}%")
+    print(f"Testing Avg Improvement (Saving): {test_impS:.2f}%")
     print(f"{'='*60}")
     
     return best_individual, logbook, pset
@@ -460,10 +470,10 @@ def main():
             all_instances=instances,
             problem_type=problem_type,
             bool_capacity=bool_capacity,
-            n_train=1,
+            n_train=5,
             n_test=-1,
-            population_size=1,
-            generations=1
+            population_size=10,
+            generations=10
         )
     else:
         print(f"No instances loaded for {problem_type}")

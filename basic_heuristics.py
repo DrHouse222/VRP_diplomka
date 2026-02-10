@@ -7,6 +7,7 @@ import json
 from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance
 from problem_types import VRP_PROBLEM_TYPE
 from data_generation import convert_vrptw_to_gvrptw
+from typing import List
 
 
 def nearest_neighbor_heuristic(instance, bool_capacity=True):
@@ -351,92 +352,389 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
 
     return routes
 
-def savings_heuristic(instance, problem: str = "auto"):
+def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
     """
-    Clarke-Wright Savings heuristic
-
-    Args:
-        instance: VRP or VRPTW
-        problem: one of {"auto", "vrp", "vrptw"}
+    Construct GVRP routes using Clarke-Wright Savings Heuristic.
+    Handles:
+      - Capacity
+      - Time Windows (Hard)
+      - Battery Constraints (Reachability + Safety Buffer)
+      - Automatic Charging Station Insertion
     """
-    if problem not in {"auto", "vrp", "vrptw"}:
-        raise ValueError("problem must be one of {'auto','vrp','vrptw'}")
-    is_tw = (problem == "vrptw") or (problem == "auto" and hasattr(instance, "ready_times") and hasattr(instance, "service_times"))
-
-    def is_time_feasible(route):
-        if not is_tw:
-            return True
-        current_time = 0.0
-        for idx in range(1, len(route) - 1):
-            c = route[idx]
-            prev = route[idx - 1]
-            travel = instance.dist_matrix[prev, c]
-            arrival = current_time + travel
-            if arrival > instance.due_dates[c]:
-                return False
-            start_service = max(arrival, instance.ready_times[c])
-            current_time = start_service + instance.service_times[c]
-        return True
-
     n = instance.dimension
-    depot = instance.depot
-
-    # Step 1: trivial solution
-    routes = []
-    route_loads = []
-    for i in range(1, n):
-        r = [depot, i, depot]
-        if is_time_feasible(r):
-            routes.append(r)
-            route_loads.append(instance.demands[i])
-        else:
-            # If single-customer route is infeasible by TW, skip it (cannot serve)
-            # This keeps behavior safe; caller can detect missing customers if needed
-            continue
-
-    # Step 2: compute savings
+    depot = getattr(instance, "depot", 0)
+    
+    if bool_capacity:
+        max_capacity = getattr(instance, "capacity", 0.0)
+    else:
+        max_capacity = float('inf')
+    
+    # --- GREEN VRP SETUP ---
+    has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
+    battery_cap = getattr(instance, "battery_capacity", float('inf'))
+    energy_per_dist = getattr(instance, "energy_consumption", 1.0)
+    base_charge_time = 100.0
+    charge_rate = base_charge_time / battery_cap if has_battery and battery_cap > 0 else 0.0
+    
+    def compute_charge_time(current_batt):
+        """Compute linear charging time based on current battery level."""
+        if not has_battery:
+            return 0.0
+        energy_needed = battery_cap - current_batt
+        return charge_rate * energy_needed
+    
+    # Identify Charging Stations
+    node_types = getattr(instance, "node_types", None)
+    stations = []
+    if node_types is not None:
+        stations = [i for i in range(n) if node_types[i] == 2]
+    
+    # ==================== PREPROCESSING ====================
+    station_distances = {}
+    nearest_station_idx = {}
+    dist_to_nearest_charger = {}
+    
+    if has_battery and stations:
+        station_arr = np.array(stations)
+        
+        for i in range(n):
+            dists_to_stations = instance.dist_matrix[i, station_arr]
+            min_idx = np.argmin(dists_to_stations)
+            
+            dist_to_nearest_charger[i] = dists_to_stations[min_idx]
+            nearest_station_idx[i] = stations[min_idx]
+            station_distances[i] = dists_to_stations
+    else:
+        for i in range(n):
+            dist_to_nearest_charger[i] = 0
+    
+    K_NEAREST = min(5, len(stations)) if stations else 0
+    k_nearest_stations = {}
+    
+    if has_battery and stations:
+        station_arr = np.array(stations)
+        for i in range(n):
+            sorted_indices = np.argsort(station_distances[i])[:K_NEAREST]
+            k_nearest_stations[i] = station_arr[sorted_indices].tolist()
+    
+    has_tw = all(hasattr(instance, attr) for attr in ("ready_times", "due_dates", "service_times"))
+    has_max_travel_time = hasattr(instance, "max_travel_time")
+    max_travel_time = getattr(instance, "max_travel_time", float('inf')) if has_max_travel_time else float('inf')
+    
+    # Get customers only
+    customers = []
+    if node_types is not None:
+        customers = [i for i in range(n) if node_types[i] == 1]
+    else:
+        customers = [i for i in range(n) if i != depot]
+    
+    # ==================== STEP 1: CREATE INITIAL ROUTES ====================
+    # Each customer starts in its own route: depot -> customer -> depot
+    routes = {}  # route_id -> {route: [nodes], load: float, customers: set}
+    route_id_counter = 0
+    customer_to_route = {}  # customer -> route_id
+    
+    for customer in customers:
+        routes[route_id_counter] = {
+            'route': [depot, customer, depot],
+            'load': instance.demands[customer],
+            'customers': {customer}
+        }
+        customer_to_route[customer] = route_id_counter
+        route_id_counter += 1
+    
+    # ==================== STEP 2: CALCULATE SAVINGS ====================
     savings = []
-    for i in range(1, n):
-        for j in range(i+1, n):
-            s = (instance.dist_matrix[depot, i] +
-                 instance.dist_matrix[depot, j] -
-                 instance.dist_matrix[i, j])
-            savings.append((s, i, j))
-    savings.sort(reverse=True, key=lambda x: x[0])
-
-    # Step 3: merge routes
-    while savings:
-        _, i, j = savings.pop(0)
-
-        # find routes containing i and j
-        ri = next((r for r in routes if i in r), None)
-        rj = next((r for r in routes if j in r), None)
-        if ri is None or rj is None or ri == rj:
+    
+    for i in range(len(customers)):
+        for j in range(i + 1, len(customers)):
+            cust_i = customers[i]
+            cust_j = customers[j]
+            
+            # Classic Clarke-Wright savings formula
+            # s(i,j) = d(depot,i) + d(depot,j) - d(i,j)
+            d_0_i = instance.dist_matrix[depot, cust_i]
+            d_0_j = instance.dist_matrix[depot, cust_j]
+            d_i_j = instance.dist_matrix[cust_i, cust_j]
+            
+            saving = d_0_i + d_0_j - d_i_j
+            
+            savings.append({
+                'customers': (cust_i, cust_j),
+                'saving': saving
+            })
+    
+    # Sort savings in descending order
+    savings.sort(key=lambda x: x['saving'], reverse=True)
+    
+    # ==================== STEP 3: MERGE ROUTES ====================
+    
+    def can_connect_customers(cust_from, cust_to, current_time, current_battery):
+        """
+        Check if we can travel from cust_from to cust_to (with charging if needed).
+        Returns: (is_feasible, route_segment, arrival_time, battery_after)
+        """
+        # Try direct connection
+        dist_direct = instance.dist_matrix[cust_from, cust_to]
+        energy_direct = dist_direct * energy_per_dist
+        
+        if current_battery >= energy_direct:
+            batt_after = current_battery - energy_direct
+            energy_safety = dist_to_nearest_charger[cust_to] * energy_per_dist
+            
+            if batt_after >= energy_safety:
+                arrival = current_time + dist_direct
+                
+                if not has_tw or arrival <= instance.due_dates[cust_to]:
+                    # Direct connection works
+                    return True, [cust_to], arrival, batt_after
+        
+        # Try via charging station
+        if has_battery:
+            stations_from_current = set(k_nearest_stations.get(cust_from, []))
+            stations_near_dest = set(k_nearest_stations.get(cust_to, []))
+            candidate_stations = list(stations_from_current | stations_near_dest)
+            
+            if not candidate_stations and stations:
+                candidate_stations = stations[:K_NEAREST]
+            
+            best_station = None
+            best_arrival = float('inf')
+            best_battery = 0
+            min_dist = float('inf')
+            
+            for station in candidate_stations:
+                d1 = instance.dist_matrix[cust_from, station]
+                e1 = d1 * energy_per_dist
+                
+                if current_battery < e1:
+                    continue
+                
+                d2 = instance.dist_matrix[station, cust_to]
+                e2 = d2 * energy_per_dist
+                
+                if battery_cap < e2:
+                    continue
+                
+                if (battery_cap - e2) < (dist_to_nearest_charger[cust_to] * energy_per_dist):
+                    continue
+                
+                arrival_at_station = current_time + d1
+                batt_at_station = current_battery - e1
+                charge_time = compute_charge_time(batt_at_station)
+                dept_from_station = arrival_at_station + charge_time
+                arrival_at_cust = dept_from_station + d2
+                
+                if has_tw and arrival_at_cust > instance.due_dates[cust_to]:
+                    continue
+                
+                total_dist = d1 + d2
+                if total_dist < min_dist:
+                    min_dist = total_dist
+                    best_station = station
+                    best_arrival = arrival_at_cust
+                    best_battery = battery_cap - e2
+            
+            if best_station is not None:
+                return True, [best_station, cust_to], best_arrival, best_battery
+        
+        return False, None, None, None
+    
+    def validate_route(route_nodes):
+        """
+        Validate entire route with all constraints.
+        Returns: (is_valid, final_route_with_stations)
+        """
+        if len(route_nodes) < 3:  # depot + at least 1 customer + depot
+            return False, None
+        
+        load = 0.0
+        current_time = 0.0
+        current_battery = battery_cap
+        current_node = depot
+        final_route = [depot]
+        
+        # Process customers (skip first depot, last depot)
+        for i in range(1, len(route_nodes) - 1):
+            customer = route_nodes[i]
+            demand = instance.demands[customer]
+            
+            # Capacity check
+            if load + demand > max_capacity:
+                return False, None
+            
+            # Try to reach customer
+            feasible, segment, arrival, batt_after = can_connect_customers(
+                current_node, customer, current_time, current_battery
+            )
+            
+            if not feasible:
+                return False, None
+            
+            # Add segment (might include charging station)
+            for node in segment:
+                final_route.append(node)
+                if node in stations:
+                    # Update for charging
+                    dist_to_station = instance.dist_matrix[current_node, node]
+                    current_battery -= dist_to_station * energy_per_dist
+                    current_time += dist_to_station
+                    charge_time = compute_charge_time(current_battery)
+                    current_battery = battery_cap
+                    current_time += charge_time
+                    current_node = node
+            
+            # Now at customer
+            load += demand
+            
+            if has_tw:
+                ready = instance.ready_times[customer]
+                service = instance.service_times[customer]
+                start_service = max(arrival, ready)
+                current_time = start_service + service
+            else:
+                current_time = arrival
+            
+            current_battery = batt_after
+            current_node = customer
+        
+        # Return to depot
+        dist_to_depot = instance.dist_matrix[current_node, depot]
+        energy_needed = dist_to_depot * energy_per_dist
+        
+        if current_battery >= energy_needed:
+            # Direct return
+            arrival_depot = current_time + dist_to_depot
+            
+            tw_ok = not has_tw or arrival_depot <= instance.due_dates[depot]
+            travel_ok = not has_max_travel_time or arrival_depot <= max_travel_time
+            
+            if tw_ok and travel_ok:
+                final_route.append(depot)
+                return True, final_route
+        
+        # Try via charging station
+        if has_battery:
+            stations_from_current = set(k_nearest_stations.get(current_node, []))
+            stations_near_depot = set(k_nearest_stations.get(depot, []))
+            candidate_stations = list(stations_from_current | stations_near_depot)
+            
+            if not candidate_stations:
+                candidate_stations = stations[:K_NEAREST]
+            
+            for station in candidate_stations:
+                d1 = instance.dist_matrix[current_node, station]
+                d2 = instance.dist_matrix[station, depot]
+                e1 = d1 * energy_per_dist
+                e2 = d2 * energy_per_dist
+                
+                if current_battery < e1 or battery_cap < e2:
+                    continue
+                
+                arrival_stat = current_time + d1
+                batt_at_station = current_battery - e1
+                charge_time = compute_charge_time(batt_at_station)
+                arrival_depot = arrival_stat + charge_time + d2
+                
+                tw_ok = not has_tw or arrival_depot <= instance.due_dates[depot]
+                travel_ok = not has_max_travel_time or arrival_depot <= max_travel_time
+                
+                if tw_ok and travel_ok:
+                    final_route.append(station)
+                    final_route.append(depot)
+                    return True, final_route
+        
+        return False, None
+    
+    # Process savings
+    for saving_entry in savings:
+        cust_i, cust_j = saving_entry['customers']
+        
+        # Skip if already in same route
+        if customer_to_route[cust_i] == customer_to_route[cust_j]:
             continue
-
-        # check if i is at end of ri and j at start of rj
-        if ri[-2] == i and rj[1] == j:
-            new_load = (sum(instance.demands[c] for c in ri if c != depot) +
-                        sum(instance.demands[c] for c in rj if c != depot))
-            if new_load <= instance.capacity:
-                new_route = ri[:-1] + rj[1:]
-                if is_time_feasible(new_route):
-                    routes.remove(ri)
-                    routes.remove(rj)
-                    routes.append(new_route)
-
-        # also check the reverse (j at end, i at start)
-        elif rj[-2] == j and ri[1] == i:
-            new_load = (sum(instance.demands[c] for c in ri if c != depot) +
-                        sum(instance.demands[c] for c in rj if c != depot))
-            if new_load <= instance.capacity:
-                new_route = rj[:-1] + ri[1:]
-                if is_time_feasible(new_route):
-                    routes.remove(ri)
-                    routes.remove(rj)
-                    routes.append(new_route)
-
-    return routes
+        
+        route_i_id = customer_to_route[cust_i]
+        route_j_id = customer_to_route[cust_j]
+        
+        route_i = routes[route_i_id]
+        route_j = routes[route_j_id]
+        
+        # Get route without depot markers
+        route_i_customers = [c for c in route_i['route'] if c != depot]
+        route_j_customers = [c for c in route_j['route'] if c != depot]
+        
+        # Check if customers are at route ends (required for Clarke-Wright)
+        i_is_first = (route_i_customers[0] == cust_i)
+        i_is_last = (route_i_customers[-1] == cust_i)
+        j_is_first = (route_j_customers[0] == cust_j)
+        j_is_last = (route_j_customers[-1] == cust_j)
+        
+        # Can only merge if they're at ends
+        if not ((i_is_first or i_is_last) and (j_is_first or j_is_last)):
+            continue
+        
+        # Try to merge
+        new_load = route_i['load'] + route_j['load']
+        
+        if new_load > max_capacity:
+            continue
+        
+        # Determine merge order
+        # Four possibilities: i_end-j_start, i_end-j_end, i_start-j_start, i_start-j_end
+        merge_orders = []
+        
+        if i_is_last and j_is_first:
+            # route_i -> route_j
+            merge_orders.append(route_i_customers + route_j_customers)
+        
+        if i_is_last and j_is_last:
+            # route_i -> reversed route_j
+            merge_orders.append(route_i_customers + route_j_customers[::-1])
+        
+        if i_is_first and j_is_first:
+            # reversed route_i -> route_j
+            merge_orders.append(route_i_customers[::-1] + route_j_customers)
+        
+        if i_is_first and j_is_last:
+            # route_j -> route_i
+            merge_orders.append(route_j_customers + route_i_customers)
+        
+        # Try each merge order
+        merged = False
+        for merged_customers in merge_orders:
+            # Build route with depots
+            test_route = [depot] + merged_customers + [depot]
+            
+            # Validate with all constraints
+            is_valid, final_route = validate_route(test_route)
+            
+            if is_valid:
+                # Merge successful!
+                # Delete old routes
+                del routes[route_j_id]
+                
+                # Update route_i with merged route
+                routes[route_i_id] = {
+                    'route': final_route,
+                    'load': new_load,
+                    'customers': route_i['customers'] | route_j['customers']
+                }
+                
+                # Update customer mappings
+                for c in route_j['customers']:
+                    customer_to_route[c] = route_i_id
+                
+                merged = True
+                break
+        
+        if merged:
+            continue
+    
+    # ==================== CONVERT TO OUTPUT FORMAT ====================
+    final_routes = [route_data['route'] for route_data in routes.values()]
+    
+    return final_routes
 
 
 

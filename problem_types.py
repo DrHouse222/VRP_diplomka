@@ -500,7 +500,7 @@ class VRPProblemType:
                                     current_node = best_station
                                     logging.info(f"Emergency station {best_station} used successfully.")
                                 else:
-                                    # LAST RESORT: Force return to depot (mark as constraint violation)
+                                    # Force return to depot (mark as constraint violation)
                                     logging.error(f"CONSTRAINT VIOLATION: Forcing return to depot from node {current_node}")
 
                     route.append(depot)
