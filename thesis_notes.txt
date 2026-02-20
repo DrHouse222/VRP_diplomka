@@ -1,6 +1,10 @@
 using VRPLIB for parsing
 vrplib does support Solomon format with the instance_format="solomon" parameter. T
 
+https://data.mendeley.com/datasets/h3mrm5dhxw/1
+
+https://neo.lcc.uma.es/vrp/vrp-instances/description-for-files-of-cordeaus-instances/
+
 Two possible strategies:
     Superset model — use one GP model trained on a superset of features (all variants). Variant-specific features are masked/filled with safe defaults when not present. Add a variant indicator feature. => easier deployment, generalization across variants.
     Per-variant models — maintain a separate GP (pset, training) per VRP variant. => potentially better specialized performance, slightly more management overhead.
@@ -10,6 +14,9 @@ hard capacity viol
 could do fitness and construction in two types 1: construct whatever, fitness penalizes 2: construct only correct, fitness only distance
 cloning 20% and turning into charging stations
 first evaluate feasibility then select and the other way, capacity check first
+
+
+
 Start:  Create a list of all unvisited customers.
         pre-calculate distance to nearest station for all nodes
 Main Loop (until all customers are visited):

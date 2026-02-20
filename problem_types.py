@@ -135,10 +135,22 @@ class VRPProblemType:
     
     def solve_with_scoring(self, instance, feature_extractor, scoring_func, bool_capacity=True) -> List[List[int]]:
         """
-        Optimized GVRP route construction with safeguards against infinite loops.
+        Route construction with multi-depot support.
+        
+        For multi-depot instances (MDVRP/MDVRPTW), at the start of each route,
+        all depots evaluate all potential customers, and the depot with the best
+        customer is chosen to start that route.
         """
         n = instance.dimension
         depot = getattr(instance, "depot", 0)
+        
+        # Check if this is a multi-depot instance
+        depots = getattr(instance, "depots", None)
+        is_multi_depot = depots is not None and len(depots) > 1
+        if is_multi_depot:
+            depots_list = depots
+        else:
+            depots_list = [depot]
 
         if bool_capacity:
             max_capacity = getattr(instance, "capacity", 0.0)
@@ -149,11 +161,23 @@ class VRPProblemType:
         has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
         battery_cap = getattr(instance, "battery_capacity", float('inf'))
         energy_per_dist = getattr(instance, "energy_consumption", 1.0)
-        base_charge_time = 100.0
-        charge_rate = base_charge_time / battery_cap if has_battery and battery_cap > 0 else 0.0
+        
+        # Use g_inverse_refueling_rate if available (EVRPTW format), otherwise fallback to default
+        g_inverse_refueling_rate = getattr(instance, "g_inverse_refueling_rate", None)
+        if g_inverse_refueling_rate is None or g_inverse_refueling_rate == 0.0:
+            # Fallback: use default charging rate (time to charge from 0% to 100%)
+            base_charge_time = 100.0
+            charge_rate = base_charge_time / battery_cap if has_battery and battery_cap > 0 else 0.0
+        else:
+            # Use g_inverse_refueling_rate: time per unit of energy
+            charge_rate = g_inverse_refueling_rate
 
         def compute_charge_time(current_batt):
-            """Compute linear charging time based on current battery level."""
+            """Compute linear charging time based on current battery level.
+            
+            Uses g_inverse_refueling_rate if available (time per unit of energy),
+            otherwise falls back to a default rate.
+            """
             if not has_battery:
                 return 0.0
             energy_needed = battery_cap - current_batt
@@ -197,12 +221,20 @@ class VRPProblemType:
 
         # Time window setup
         has_tw = self.has_time_windows(instance)
-        has_max_travel_time = hasattr(instance, "max_travel_time")
-        max_travel_time = getattr(instance, "max_travel_time", float('inf')) if has_max_travel_time else float('inf')
+        # Check for max_travel_time and normalize it
+        max_travel_time_raw = getattr(instance, "max_travel_time", None)
+        if max_travel_time_raw is not None and max_travel_time_raw > 0 and np.isfinite(max_travel_time_raw):
+            has_max_travel_time = True
+            max_travel_time = float(max_travel_time_raw)
+        else:
+            has_max_travel_time = False
+            max_travel_time = float('inf')
 
         # Initialize unvisited nodes
         unvisited = set(range(0, n))
-        unvisited.discard(depot)
+        # Remove all depots from unvisited
+        for d in depots_list:
+            unvisited.discard(d)
         if node_types is not None:
             for i in range(n):
                 if node_types[i] == 2:
@@ -212,16 +244,127 @@ class VRPProblemType:
 
         # ==================== MAIN ROUTING LOOP ====================
         while unvisited:
-            # Start a new route
-            route = [depot]
+            # For multi-depot: choose best depot-customer pair to start route
+            route_start_depot = depot
+            if is_multi_depot:
+                best_depot_customer_pair = None
+                best_score = float('inf')
+                
+                # Evaluate all customers from all depots
+                for candidate_depot in depots_list:
+                    for customer in unvisited:
+                        demand = instance.demands[customer]
+                        
+                        # Capacity check
+                        if demand > max_capacity:
+                            continue
+                        
+                        # Check feasibility from this depot
+                        dist_direct = instance.dist_matrix[candidate_depot, customer]
+                        energy_direct = dist_direct * energy_per_dist
+                        
+                        if has_battery and energy_direct > battery_cap:
+                            continue
+                        
+                        if has_battery:
+                            batt_after = battery_cap - energy_direct
+                            energy_safety = dist_to_nearest_charger[customer] * energy_per_dist
+                            if batt_after < energy_safety:
+                                continue
+
+                        # Time window check (hard constraints)
+                        arrival_direct = dist_direct  # Starting at time 0
+                        arrival_at_depot = None
+                        if has_tw:
+                            if arrival_direct > instance.due_dates[customer]:
+                                continue
+                            ready = instance.ready_times[customer]
+                            service = instance.service_times[customer]
+                            dept_time = max(arrival_direct, ready) + service
+                            dist_home = instance.dist_matrix[customer, candidate_depot]
+                            arrival_at_depot = dept_time + dist_home
+                            if arrival_at_depot > instance.due_dates[candidate_depot]:
+                                continue
+                        else:
+                            service = getattr(instance, "service_times", np.zeros(n))[customer]
+                            dist_home = instance.dist_matrix[customer, candidate_depot]
+                            arrival_at_depot = dist_direct + service + dist_home
+                        
+                        # Score this depot-customer pair
+                        features = feature_extractor.extract_features(
+                            request=customer,
+                            current_route=[],
+                            current_load=0.0,
+                            current_position=candidate_depot,
+                            current_time=0.0 if has_tw else 0.0,
+                            current_battery=battery_cap if has_battery else None,
+                            dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None
+                        )
+                        features['dist_from_current'] = dist_direct
+                        features['savings'] = (
+                            features.get('dist_to_depot', 0.0) +
+                            features.get('dist_to_depot_from_request', 0.0) -
+                            dist_direct
+                        )
+                        features["remaining_capacity"] = max_capacity - demand
+                        feature_values = self.extract_feature_values(features)
+                        
+                        try:
+                            score = scoring_func(*feature_values)
+                        except Exception:
+                            score = 1e6
+                        
+                        # Soft constraint: penalize exceeding max_travel_time
+                        if has_max_travel_time and arrival_at_depot is not None and arrival_at_depot > max_travel_time:
+                            violation = arrival_at_depot - max_travel_time
+                            score += violation  # penalty proportional to violation
+                        
+                        if score < best_score:
+                            best_score = score
+                            best_depot_customer_pair = (candidate_depot, customer)
+                
+                if best_depot_customer_pair is None:
+                    logging.warning(f"No feasible depot-customer pair found. {len(unvisited)} customers remain.")
+                    break
+                
+                route_start_depot, first_customer = best_depot_customer_pair
+                
+            else:
+                first_customer = None
+            
+            # Start a new route from selected depot
+            route = [route_start_depot]
             load = 0.0
-            current_node = depot
+            current_node = route_start_depot
             current_time = 0.0
             current_battery = battery_cap
-
-            customers_added_this_route = 0
+            
+            # If multi-depot and we selected a first customer, add it immediately
+            if is_multi_depot and first_customer is not None:
+                route.append(first_customer)
+                load += instance.demands[first_customer]
+                unvisited.remove(first_customer)
+                current_node = first_customer
+                
+                dist_to_cust = instance.dist_matrix[route_start_depot, first_customer]
+                if has_tw:
+                    arrival = current_time + dist_to_cust
+                    ready = instance.ready_times[first_customer]
+                    service = instance.service_times[first_customer]
+                    start_service = max(arrival, ready)
+                    current_time = start_service + service
+                else:
+                    current_time += dist_to_cust
+                
+                if has_battery:
+                    energy_used = dist_to_cust * energy_per_dist
+                    current_battery -= energy_used
+                
+                customers_added_this_route = 1  # First customer was added
+            else:
+                customers_added_this_route = 0  # No first customer added
             inner_iterations = 0
-            MAX_INNER_ITERATIONS = len(unvisited) * 2  # Safety for inner loop
+            MAX_INNER_ITERATIONS = len(unvisited) * 2 + 1  # Safety for inner loop
 
             while True:
                 inner_iterations += 1
@@ -229,12 +372,14 @@ class VRPProblemType:
                 # SAFEGUARD: Inner loop iteration check
                 if inner_iterations > MAX_INNER_ITERATIONS:
                     logging.warning(f"Inner loop exceeded {MAX_INNER_ITERATIONS} iterations. Breaking route.")
+                    route.append(route_start_depot)
                     break
                 
                 candidates = list(unvisited)
 
-                # If no candidates left, must finish route
+                # If no candidates left, close route at depot and finish
                 if not candidates:
+                    route.append(route_start_depot)
                     break
                 
                 feasible_candidates: List[int] = []
@@ -268,10 +413,10 @@ class VRPProblemType:
                                 ready = instance.ready_times[customer] if has_tw else 0.0
                                 service = instance.service_times[customer] if has_tw else 0.0
                                 dept_time = max(arrival_direct, ready) + service
-                                dist_home = instance.dist_matrix[customer, depot]
+                                dist_home = instance.dist_matrix[customer, route_start_depot]
                                 arrival_at_depot = dept_time + dist_home
 
-                                tw_ok = not has_tw or (arrival_at_depot <= instance.due_dates[depot])
+                                tw_ok = not has_tw or (arrival_at_depot <= instance.due_dates[route_start_depot])
                                 travel_time_ok = not has_max_travel_time or (arrival_at_depot <= max_travel_time)
 
                                 if tw_ok and travel_time_ok:
@@ -327,10 +472,10 @@ class VRPProblemType:
                                 ready = instance.ready_times[customer]
                                 service = instance.service_times[customer]
                                 dept_cust = max(arrival_at_cust, ready) + service
-                                dist_home = instance.dist_matrix[customer, depot]
+                                dist_home = instance.dist_matrix[customer, route_start_depot]
                                 arrival_at_depot = dept_cust + dist_home
 
-                                if arrival_at_depot > instance.due_dates[depot]:
+                                if arrival_at_depot > instance.due_dates[route_start_depot]:
                                     continue
                                 
                                 if has_max_travel_time and arrival_at_depot > max_travel_time:
@@ -390,22 +535,23 @@ class VRPProblemType:
                 if not feasible_candidates:
                     # SAFEGUARD: Check if we added any customers this route
                     if customers_added_this_route == 0:
-                        logging.warning(f"Empty route. No customers feasible from depot. {len(unvisited)} remain.")
+                        logging.warning(f"Empty route. No customers feasible from depot {route_start_depot}. {len(unvisited)} remain.")
                         logging.error(f"Unserved customers: {sorted(list(unvisited))}")
                         # Return what we have so far rather than infinite loop
-                        return routes if routes else [[depot, depot]]
+                        return routes if routes else [[route_start_depot, route_start_depot]]
 
                     # Try to return to depot (with charging if needed)
-                    if has_battery and current_node != depot:
-                        dist_to_depot = instance.dist_matrix[current_node, depot]
+                    best_station = None  # ensure defined before use below
+                    candidate_stations = []
+                    if has_battery and current_node != route_start_depot:
+                        dist_to_depot = instance.dist_matrix[current_node, route_start_depot]
                         energy_needed = dist_to_depot * energy_per_dist
 
                         if current_battery < energy_needed and stations:
-                            best_station = None
                             min_total_dist = float('inf')
 
                             stations_from_current = set(k_nearest_stations.get(current_node, []))
-                            stations_near_depot = set(k_nearest_stations.get(depot, []))
+                            stations_near_depot = set(k_nearest_stations.get(route_start_depot, []))
                             candidate_stations = list(stations_from_current | stations_near_depot)
 
                             if not candidate_stations:
@@ -413,7 +559,7 @@ class VRPProblemType:
 
                             for station in candidate_stations:
                                 d1 = instance.dist_matrix[current_node, station]
-                                d2 = instance.dist_matrix[station, depot]
+                                d2 = instance.dist_matrix[station, route_start_depot]
                                 e1 = d1 * energy_per_dist
                                 e2 = d2 * energy_per_dist
 
@@ -421,14 +567,14 @@ class VRPProblemType:
                                     continue
                                 if battery_cap < e2:
                                     continue
-                                
+
                                 if has_tw:
                                     arrival_stat = current_time + d1
                                     batt_at_station = current_battery - e1
                                     charge_time = compute_charge_time(batt_at_station)
                                     dept_stat = arrival_stat + charge_time
                                     arrival_depot = dept_stat + d2
-                                    if arrival_depot > instance.due_dates[depot]:
+                                    if arrival_depot > instance.due_dates[route_start_depot]:
                                         continue
                                     if has_max_travel_time and arrival_depot > max_travel_time:
                                         continue
@@ -440,7 +586,7 @@ class VRPProblemType:
                                         arrival_depot = arrival_stat + charge_time + d2
                                         if arrival_depot > max_travel_time:
                                             continue
-                                        
+
                                 total_dist = d1 + d2
                                 if total_dist < min_total_dist:
                                     min_total_dist = total_dist
@@ -462,7 +608,7 @@ class VRPProblemType:
 
                                 for station in stations:  # Check ALL stations
                                     d1 = instance.dist_matrix[current_node, station]
-                                    d2 = instance.dist_matrix[station, depot]
+                                    d2 = instance.dist_matrix[station, route_start_depot]
                                     e1 = d1 * energy_per_dist
                                     e2 = d2 * energy_per_dist
 
@@ -480,7 +626,7 @@ class VRPProblemType:
                                         arrival_depot = dept_stat + d2
 
                                         # Allow small time window violations in emergency
-                                        time_violation = max(0, arrival_depot - instance.due_dates[depot])
+                                        time_violation = max(0, arrival_depot - instance.due_dates[route_start_depot])
                                         if time_violation > 100:  # Only reject if violation is large
                                             continue
                                         
@@ -503,7 +649,7 @@ class VRPProblemType:
                                     # Force return to depot (mark as constraint violation)
                                     logging.error(f"CONSTRAINT VIOLATION: Forcing return to depot from node {current_node}")
 
-                    route.append(depot)
+                    route.append(route_start_depot)
                     break
                 
                 # Pick best candidate
@@ -554,6 +700,7 @@ class VRPProblemType:
         if unvisited:
             logging.warning(f"Algorithm completed with {len(unvisited)} unvisited customers: {sorted(list(unvisited))}")
 
+        print(f"Routes: {routes}")
         return routes
 
 

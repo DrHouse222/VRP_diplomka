@@ -118,3 +118,15 @@ def convert_vrptw_to_gvrptw(vrptw_instances, battery_capacity = 200, energy_cons
             percent_hybrid=percent_hybrid
         ))
     return gvrp_instances
+
+def remove_tw_from_gvrp(gvrp_instances):
+    #Remove time windows from a GVRPTW instance
+    # Delete the time window attributes so has_time_windows() returns False
+    for gvrp_instance in gvrp_instances:
+        if hasattr(gvrp_instance, 'ready_times'):
+            delattr(gvrp_instance, 'ready_times')
+        if hasattr(gvrp_instance, 'due_dates'):
+            delattr(gvrp_instance, 'due_dates')
+        if hasattr(gvrp_instance, 'service_times'):
+            delattr(gvrp_instance, 'service_times')
+    return gvrp_instances

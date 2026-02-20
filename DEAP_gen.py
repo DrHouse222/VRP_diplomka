@@ -5,10 +5,10 @@ Genetic Programming solution for VRP variants using DEAP framework.
 
 import numpy as np
 from deap import base, creator, tools, gp, algorithms
-from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor
+from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor, CordeauMDVRPInstance
 from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic
 from problem_types import VRP_PROBLEM_TYPE
-from data_generation import convert_vrptw_to_gvrptw
+from data_generation import convert_vrptw_to_gvrptw, remove_tw_from_gvrp
 import time
 import matplotlib.pyplot as plt
 import glob
@@ -117,13 +117,13 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
         
         # Apply crossover and mutation on the offspring
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if np.random.random() < 0.5:  # cxpb
+            if np.random.random() < 0.7:  # cxpb TODO
                 toolbox.mate(child1, child2)
                 del child1.fitness.values
                 del child2.fitness.values
         
         for mutant in offspring:
-            if np.random.random() < 0.1:  # mutpb
+            if np.random.random() < 0.2:  # mutpb TODO
                 toolbox.mutate(mutant)
                 del mutant.fitness.values
         
@@ -428,40 +428,68 @@ def load_instances_by_type():
     
     
     gvrp_instances = []
-    # Load all .xml files from Sets/felipe-et-al-2014
-    xml_files = sorted(glob.glob("Sets/felipe-et-al-2014/*.xml"))
-    for filepath in xml_files:
+    # Load EVRPTW Green VRP instances from Sets/evrptw_instances instead of older datasets
+    evrptw_files = sorted(
+        [
+            f
+            for f in glob.glob("Sets/evrptw_instances/*.txt")
+            if not os.path.basename(f) in ["readme.txt"]
+        ]
+    )
+    for filepath in evrptw_files:
         try:
             gvrp_instances.append(GVRPMultiTechInstance(filepath))
         except Exception as e:
             print(f"Warning: Failed to load {filepath}: {e}")
     
+    mdvrp_instances = []
+    mdvrptw_instances = []
+    # Load MDVRP and MDVRPTW instances from Sets/C-mdvrp and Sets/C-mdvrptw
+    mdvrp_files = sorted(glob.glob("Sets/C-mdvrp/*"))
+    for filepath in mdvrp_files:
+        try:
+            mdvrp_instances.append(CordeauMDVRPInstance(filepath))
+        except Exception as e:
+            print(f"Warning: Failed to load {filepath}: {e}")
+    mdvrptw_files = sorted(glob.glob("Sets/C-mdvrptw/*"))
+    for filepath in mdvrptw_files:
+        try:
+            mdvrptw_instances.append(CordeauMDVRPInstance(filepath))
+        except Exception as e:
+            print(f"Warning: Failed to load {filepath}: {e}")
+
     print(f"Loaded {len(cvrp_instances)} CVRP instances")
     print(f"Loaded {len(vrptw_instances)} VRPTW instances")
     print(f"Loaded {len(gvrp_instances)} GVRP instances")
-    
-    return cvrp_instances, vrptw_instances, gvrp_instances
+    print(f"Loaded {len(mdvrp_instances)} MDVRP instances")
+    print(f"Loaded {len(mdvrptw_instances)} MDVRPTW instances")
+    return cvrp_instances, vrptw_instances, gvrp_instances, mdvrp_instances, mdvrptw_instances
 
 
 def main():
     # Choose variants
     bool_capacity = True
     bool_TW = True
-    bool_green = True
+    bool_green = False
+    bool_MD = False
 
     # Load instances
-    cvrp_instances, vrptw_instances, gvrp_instances = load_instances_by_type()
+    cvrp_instances, vrptw_instances, gvrp_instances, mdvrp_instances, mdvrptw_instances = load_instances_by_type()
     results = None
 
-    # Mapping: (green, TW) -> (Problem Name, Data List)
+    # Mapping: (TW, green, MD) -> (Problem Name, Data List)
     problem_map = {
-        (False, False): ("CVRP", cvrp_instances),
-        (True, False):  ("VRPTW", vrptw_instances),
-        (False, True):  ("GVRP", gvrp_instances),
-        (True, True):   ("G-VRPTW", convert_vrptw_to_gvrptw(vrptw_instances))
+        (False, False, False): ("CVRP", cvrp_instances),
+        (True, False, False):  ("VRPTW", vrptw_instances),
+        (False, True, False):  ("GVRP", remove_tw_from_gvrp(gvrp_instances)),
+        (True, True, False):   ("G-VRPTW", gvrp_instances),
+        (False, False, True):  ("MDCVRP", mdvrp_instances),
+        (True, False, True):   ("MDVRPTW", mdvrptw_instances),
+        #(False, True, True):   ("GVRP-MD", remove_tw_from_gvrp(mdvrp_instances)),
+        #(True, True, True):    ("G-VRPTW-MD", mdvrp_instances)
     }
 
-    problem_type, instances = problem_map.get((bool_TW, bool_green))
+    problem_type, instances = problem_map.get((bool_TW, bool_green, bool_MD))
 
     start_time = time.time()
 
@@ -470,10 +498,10 @@ def main():
             all_instances=instances,
             problem_type=problem_type,
             bool_capacity=bool_capacity,
-            n_train=5,
-            n_test=-1,
-            population_size=10,
-            generations=10
+            n_train=1,
+            n_test=0,
+            population_size=1,
+            generations=1
         )
     else:
         print(f"No instances loaded for {problem_type}")

@@ -745,10 +745,22 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
 if __name__ == "__main__":
     # Find all instance files
     cvrp_files = sorted(glob.glob("Sets/Set_A/*.vrp"))
-    vrptw_files = sorted([f for f in glob.glob("Sets/Vrp-Set-HG/*.txt") 
-                          if not os.path.basename(f) in ["readme.txt"] 
-                          and not os.path.basename(f).startswith("RC")])
-    gvrp_files = sorted(glob.glob("Sets/felipe-et-al-2014/*.xml"))
+    vrptw_files = sorted(
+        [
+            f
+            for f in glob.glob("Sets/Vrp-Set-HG/*.txt")
+            if not os.path.basename(f) in ["readme.txt"]
+            and not os.path.basename(f).startswith("RC")
+        ]
+    )
+    # Use EVRPTW Green VRP instances instead of the old Felipe XML or A/B datasets
+    gvrp_files = sorted(
+        [
+            f
+            for f in glob.glob("Sets/evrptw_instances/*.txt")
+            if not os.path.basename(f) in ["readme.txt"]
+        ]
+    )
     
     print(f"Found {len(cvrp_files)} CVRP, {len(vrptw_files)} VRPTW, {len(gvrp_files)} GVRP instances")
     print("=" * 80)

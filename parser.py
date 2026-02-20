@@ -1,3 +1,4 @@
+import os
 import vrplib
 import numpy as np
 import re
@@ -75,128 +76,378 @@ class VRPTWInstance:
             f"vehicles={self.num_vehicles})"
         )
 
-class GVRPMultiTechInstance:
+
+class CordeauMDVRPInstance:
     """
-    Parser for Felipe et al. (2014) GVRP-multitech XML instances.
+    Parser for Cordeau MDVRP / MDVRPTW instances (`Sets/C-mdvrp`, `Sets/C-mdvrptw`).
     
-    This class is tailored to instances in `Sets/felipe-et-al-2014/`.
+    Supports:
+    - type 2: MDVRP  (no time windows)
+    - type 6: MDVRPTW (with time windows)
     
-    Attributes
-    ----------
-    name : str
-        Instance name from the XML.
-    dimension : int
-        Number of nodes in the network.
-    coords : np.ndarray, shape (n, 2)
-        Node coordinates (cx, cy) ordered by node id.
-    node_types : np.ndarray, shape (n,)
-        Node type (0 = depot, 1 = customer, 2 = charging station).
-    demands : np.ndarray, shape (n,)
-        Demand quantity per node (0 for non-customer nodes without demand).
-    service_times : np.ndarray, shape (n,)
-        Service time per node.
-    depot : int
-        Depot node id (from <departure_node>, should match node type 0).
-    capacity : float
-        Vehicle capacity.
-    num_vehicles : int
-        Number of vehicles of this profile.
-    max_travel_time : float
-        Maximum route travel time.
-    battery_capacity : float
-        Battery capacity (energy) of the vehicle.
-    dist_matrix : np.ndarray, shape (n, n)
-        Symmetric distance matrix computed from Euclidean coordinates.
+    Representation
+    --------------
+    - Nodes 0 .. n+t-1 correspond to instance lines 1 .. n+t
+    - The last t nodes are depots; customers are 0 .. n-1
+    - `depots` holds the indices of all depots
+    - `depot` is set to the first depot index for compatibility with single-depot code
     """
 
     def __init__(self, file_path: str):
-        tree = ET.parse(file_path)
-        root = tree.getroot()
+        self.file_path = file_path
+        self.name = os.path.basename(file_path)
 
-        # Basic info
-        info = root.find("info")
-        self.name = info.findtext("name") if info is not None else file_path
+        with open(file_path, "r") as f:
+            header = f.readline().split()
+            if len(header) < 4:
+                raise ValueError(f"Invalid Cordeau header in {file_path}: {header}")
 
-        # --- Network: nodes ---
-        nodes_elem = root.find("./network/nodes")
-        nodes = []
-        max_node_id = -1
-        if nodes_elem is not None:
-            for node_elem in nodes_elem.findall("node"):
-                node_id = int(node_elem.get("id"))
-                node_type = int(node_elem.get("type"))
-                cx = float(node_elem.findtext("cx"))
-                cy = float(node_elem.findtext("cy"))
-                nodes.append((node_id, node_type, cx, cy))
-                if node_id > max_node_id:
-                    max_node_id = node_id
+            type_code = int(header[0])
+            self.type_code = type_code
 
-        self.dimension = max_node_id + 1 if max_node_id >= 0 else 0
+            if type_code not in (2, 6):
+                raise ValueError(
+                    f"CordeauMDVRPInstance only supports type 2 (MDVRP) and 6 (MDVRPTW), "
+                    f"got {type_code} in {file_path}"
+                )
 
-        # Initialize arrays
+            m = int(header[1])  # number of vehicles
+            n = int(header[2])  # number of customers
+            t = int(header[3])  # number of depots
+
+            self.num_vehicles = m
+            self.num_customers = n
+            self.num_depots = t
+
+            # Per-depot (or per-day) duration and capacity
+            durations = []
+            capacities = []
+            for _ in range(t):
+                line = f.readline()
+                if not line:
+                    raise ValueError(f"Unexpected EOF while reading depot lines in {file_path}")
+                parts = line.split()
+                if len(parts) < 2:
+                    raise ValueError(f"Invalid depot line in {file_path}: {line}")
+                D = float(parts[0])
+                Q = float(parts[1])
+                durations.append(D)
+                capacities.append(Q)
+
+            # Default global capacity and max_travel_time
+            # Use the maximum Q and a positive D if available
+            self.capacity = max(capacities) if capacities else 0.0
+            positive_D = [d for d in durations if d > 0]
+            self.max_travel_time = max(positive_D) if positive_D else float("inf")
+
+            # Read all remaining lines as nodes (customers + depots)
+            node_rows = []
+            for line in f:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                parts = stripped.split()
+                if len(parts) < 7:
+                    continue
+
+                idx = int(parts[0])
+                x = float(parts[1])
+                y = float(parts[2])
+                service = float(parts[3])
+                demand = float(parts[4])
+                freq = int(parts[5])
+                a = int(parts[6])
+
+                # Visit combinations (not used by this parser)
+                combo_start = 7
+                combo_end = 7 + a
+                # combos = parts[combo_start:combo_end]  # ignored
+                rest = parts[combo_end:]
+
+                # Time windows only for MDVRPTW (type 6)
+                if type_code == 6 and len(rest) >= 2:
+                    e = float(rest[-2])
+                    l = float(rest[-1])
+                else:
+                    e = None
+                    l = None
+
+                node_rows.append(
+                    {
+                        "idx": idx,
+                        "x": x,
+                        "y": y,
+                        "service": service,
+                        "demand": demand,
+                        "freq": freq,
+                        "a": a,
+                        "ready": e,
+                        "due": l,
+                    }
+                )
+
+        expected_nodes = n + t
+        if len(node_rows) != expected_nodes:
+            # Be tolerant but warn via exception so user can fix data if needed
+            raise ValueError(
+                f"Expected {expected_nodes} nodes (customers + depots) in {file_path}, "
+                f"found {len(node_rows)}"
+            )
+
+        # Dimension: customers + depots
+        self.dimension = expected_nodes
+
+        # Map original index (1..n+t) to 0-based position
+        # Cordeau MDVRP/MDVRPTW instances use 1..n+t, with last t entries as depots
         self.coords = np.zeros((self.dimension, 2), dtype=float)
-        self.node_types = np.zeros(self.dimension, dtype=int)
-
-        for node_id, node_type, cx, cy in nodes:
-            self.node_types[node_id] = node_type
-            self.coords[node_id, 0] = cx
-            self.coords[node_id, 1] = cy
-
-        # --- Fleet info ---
-        vehicle_profile = root.find("./fleet/vehicle_profile")
-        self.num_vehicles = int(vehicle_profile.get("number")) if vehicle_profile is not None else 1
-        self.capacity = float(vehicle_profile.findtext("capacity")) if vehicle_profile is not None else 0.0
-        self.max_travel_time = (
-            float(vehicle_profile.findtext("max_travel_time")) if vehicle_profile is not None else 0.0
-        )
-
-        # Depot from departure_node (should correspond to node with type 0)
-        if vehicle_profile is not None:
-            self.depot = int(vehicle_profile.findtext("departure_node"))
-        else:
-            # Fallback: first node of type 0, or 0
-            depot_candidates = [nid for nid, ntype, _, _ in nodes if ntype == 0]
-            self.depot = depot_candidates[0] if depot_candidates else 0
-
-        # Battery capacity (optional)
-        battery_capacity_text = None
-        if vehicle_profile is not None:
-            custom_elem = vehicle_profile.find("custom")
-            if custom_elem is not None:
-                battery_capacity_text = custom_elem.findtext("battery_capacity")
-        self.battery_capacity = float(battery_capacity_text) if battery_capacity_text is not None else 0.0
-
-        # --- Requests: demands and service times ---
         self.demands = np.zeros(self.dimension, dtype=float)
         self.service_times = np.zeros(self.dimension, dtype=float)
 
-        requests_elem = root.find("requests")
-        if requests_elem is not None:
-            for req in requests_elem.findall("request"):
-                node_id = int(req.get("node"))
-                quantity = float(req.findtext("quantity"))
-                service_time = float(req.findtext("service_time"))
-                if 0 <= node_id < self.dimension:
-                    self.demands[node_id] = quantity
-                    self.service_times[node_id] = service_time
+        has_tw = self.type_code == 6
+        if has_tw:
+            self.ready_times = np.zeros(self.dimension, dtype=float)
+            self.due_dates = np.zeros(self.dimension, dtype=float)
 
-        # --- Distance matrix: compute from coordinates (Euclidean) ---
-        # Ignore the <length> and <travel_time> fields and instead build a
-        # symmetric distance matrix directly from (cx, cy) coordinates so
-        # it is consistent with other coordinate-based instances.
+        # Node types: 1 = customer, 0 = depot (no charging stations here)
+        self.node_types = np.ones(self.dimension, dtype=int)
+
+        for row in node_rows:
+            idx_0 = row["idx"] - 1  # convert to 0-based
+            if not (0 <= idx_0 < self.dimension):
+                continue
+
+            self.coords[idx_0, 0] = row["x"]
+            self.coords[idx_0, 1] = row["y"]
+            self.demands[idx_0] = row["demand"]
+            self.service_times[idx_0] = row["service"]
+
+            if has_tw and row["ready"] is not None and row["due"] is not None:
+                self.ready_times[idx_0] = row["ready"]
+                self.due_dates[idx_0] = row["due"]
+
+        # Depots: last t entries (indices n .. n+t-1)
+        self.depots = list(range(n, n + t))
+        for d_idx in self.depots:
+            self.node_types[d_idx] = 0
+
+        # For compatibility with single-depot code, pick first depot as main depot
+        self.depot = self.depots[0] if self.depots else 0
+
+        # Distance matrix (Euclidean)
         if self.dimension > 0:
-            # coords: (n, 2)
             diff = self.coords[:, None, :] - self.coords[None, :, :]
-            # Euclidean distance
             self.dist_matrix = np.hypot(diff[..., 0], diff[..., 1])
         else:
             self.dist_matrix = np.zeros((0, 0), dtype=float)
 
     def __repr__(self):
         return (
-            f"GVRPMultiTechInstance({self.name}, n={self.dimension}, cap={self.capacity}, "
-            f"vehicles={self.num_vehicles}, depot={self.depot})"
+            f"CordeauMDVRPInstance({self.name}, n={self.dimension}, "
+            f"customers={self.num_customers}, depots={self.num_depots}, "
+            f"cap={self.capacity}, vehicles={self.num_vehicles})"
         )
+
+class GVRPMultiTechInstance:
+    """
+    Parser for Green VRP instances (electric VRPs).
+    
+    - EVRPTW instances in text format from `Sets/evrptw_instances/`
+    
+    Attributes
+    ----------
+    name : str
+        Instance name.
+    dimension : int
+        Number of nodes in the network.
+    coords : np.ndarray, shape (n, 2)
+        Node coordinates ordered by internal node id.
+    node_types : np.ndarray, shape (n,)
+        Node type (0 = depot, 1 = customer, 2 = charging station).
+    demands : np.ndarray, shape (n,)
+        Demand quantity per node (0 for non-customer nodes).
+    service_times : np.ndarray, shape (n,)
+        Service time per node.
+    depot : int
+        Depot node id.
+    capacity : float
+        Vehicle load capacity.
+    num_vehicles : int
+        Number of vehicles (if known, otherwise 1).
+    max_travel_time : float
+        Maximum route travel time (if provided by the instance).
+    battery_capacity : float
+        Battery/energy capacity of the vehicle.
+    energy_consumption : float
+        Energy consumption per unit distance.
+    dist_matrix : np.ndarray, shape (n, n)
+        Symmetric distance matrix computed from coordinates.
+    """
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self.name = os.path.basename(file_path)
+        self._parse_evrptw_txt(file_path)
+
+    # ------------------------------------------------------------------
+    # EVRPTW .txt parser (Sets/evrptw_instances)
+    # ------------------------------------------------------------------
+    def _parse_evrptw_txt(self, file_path: str) -> None:
+        """
+        Parse EVRPTW instances in text format located in `Sets/evrptw_instances/`.
+        
+        Format (see readme in that directory):
+        - Header line with column names
+        - One line per location:
+            StringId  Type  x  y  demand  ReadyTime  DueDate  ServiceTime
+          where:
+            Type: 'd' = depot, 'f' = recharging station, 'c' = customer
+        - Trailing parameter lines:
+            Q Vehicle fuel tank capacity /.../
+            C Vehicle load capacity /.../
+            r fuel consumption rate /.../
+            g inverse refueling rate /.../
+            v average Velocity /.../
+        
+        We build a unified indexing:
+            0      : depot
+            1..n-1 : remaining nodes in file order (stations or customers)
+        """
+        nodes = []
+        Q = None
+        C = None
+        r = None
+        g = None
+        v = None
+
+        with open(file_path, "r") as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                # Skip header
+                if stripped.lower().startswith("stringid"):
+                    continue
+
+                parts = stripped.split()
+
+                # Node line
+                if len(parts) >= 8 and parts[1] in {"d", "f", "c"}:
+                    string_id = parts[0]
+                    type_char = parts[1].lower()
+                    try:
+                        x = float(parts[2])
+                        y = float(parts[3])
+                        demand = float(parts[4])
+                        ready = float(parts[5])
+                        due = float(parts[6])
+                        service = float(parts[7])
+                    except ValueError:
+                        continue
+
+                    nodes.append(
+                        (string_id, type_char, x, y, demand, ready, due, service)
+                    )
+                    continue
+
+                # Parameter lines at the bottom
+                if stripped.startswith("Q Vehicle fuel tank capacity"):
+                    # pattern: Q Vehicle fuel tank capacity /62.14/
+                    try:
+                        Q = float(stripped.split("/")[1])
+                    except Exception:
+                        pass
+                elif stripped.startswith("C Vehicle load capacity"):
+                    try:
+                        C = float(stripped.split("/")[1])
+                    except Exception:
+                        pass
+                elif stripped.startswith("r fuel consumption rate"):
+                    try:
+                        r = float(stripped.split("/")[1])
+                    except Exception:
+                        pass
+                elif stripped.startswith("g inverse refueling rate"):
+                    try:
+                        g = float(stripped.split("/")[1])
+                    except Exception:
+                        pass
+                elif stripped.startswith("v average Velocity"):
+                    try:
+                        v = float(stripped.split("/")[1])
+                    except Exception:
+                        pass
+
+        if not nodes:
+            raise ValueError(f"No nodes parsed from EVRPTW instance: {file_path}")
+
+        # Put depot first, then remaining nodes in original order
+        depot_nodes = [n for n in nodes if n[1] == "d"]
+        other_nodes = [n for n in nodes if n[1] != "d"]
+
+        if len(depot_nodes) != 1:
+            raise ValueError(
+                f"Expected exactly one depot in EVRPTW instance {file_path}, found {len(depot_nodes)}"
+            )
+
+        ordered_nodes = depot_nodes + other_nodes
+
+        self.dimension = len(ordered_nodes)
+        self.coords = np.zeros((self.dimension, 2), dtype=float)
+        self.node_types = np.zeros(self.dimension, dtype=int)
+        self.demands = np.zeros(self.dimension, dtype=float)
+        self.service_times = np.zeros(self.dimension, dtype=float)
+        self.ready_times = np.zeros(self.dimension, dtype=float)
+        self.due_dates = np.zeros(self.dimension, dtype=float)
+
+        for idx, (_, type_char, x, y, demand, ready, due, service) in enumerate(
+            ordered_nodes
+        ):
+            self.coords[idx, 0] = x
+            self.coords[idx, 1] = y
+
+            if type_char == "d":
+                self.node_types[idx] = 0
+            elif type_char == "c":
+                self.node_types[idx] = 1
+            elif type_char == "f":
+                self.node_types[idx] = 2
+            else:
+                self.node_types[idx] = 0
+
+            self.demands[idx] = demand
+            self.ready_times[idx] = ready
+            self.due_dates[idx] = due
+            self.service_times[idx] = service
+
+        # Depot is the first element by construction
+        self.depot = 0
+
+        # EVRPTW parameters
+        # Battery capacity Q and load capacity C
+        self.battery_capacity = float(Q) if Q is not None else 0.0
+        self.capacity = float(C) if C is not None else 0.0
+
+        # Consumption and charging
+        self.energy_consumption = float(r) if r is not None else 1.0
+        self.g_inverse_refueling_rate = float(g) if g is not None else 0.0
+        self.velocity = float(v) if v is not None else 1.0
+
+        # Number of vehicles is not explicitly given; keep a generic value
+        self.num_vehicles = 1
+
+        # A reasonable upper bound for route duration: latest due date
+        self.max_travel_time = (
+            float(np.max(self.due_dates)) if self.due_dates.size > 0 else 0.0
+        )
+
+        # Distance matrix based on Euclidean metric
+        if self.dimension > 0:
+            diff = self.coords[:, None, :] - self.coords[None, :, :]
+            self.dist_matrix = np.hypot(diff[..., 0], diff[..., 1])
+        else:
+            self.dist_matrix = np.zeros((0, 0), dtype=float)
+
     
 class VRPFeatureExtractor:
     """Extracts VRP/VRPTW/GVRP features for request evaluation.
