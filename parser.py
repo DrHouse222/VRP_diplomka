@@ -493,7 +493,8 @@ class VRPFeatureExtractor:
     
     def extract_features(self, request: int, current_route: List[int], 
                         current_load: float, current_position: int, current_time: float = 0.0,
-                        current_battery: float = None, dist_to_nearest_charger: Dict[int, float] = None) -> Dict[str, float]:
+                        current_battery: float = None, dist_to_nearest_charger: Dict[int, float] = None,
+                        route_depot: int = None) -> Dict[str, float]:
         """
         Extract features for a given candidate request.
         
@@ -505,24 +506,29 @@ class VRPFeatureExtractor:
             current_time: Current time at the position (used if TW present)
             current_battery: Current battery level (for GVRP)
             dist_to_nearest_charger: Dictionary mapping node -> distance to nearest charger (for GVRP)
+            route_depot: Depot of the current route (for multi-depot). If None, uses instance.depot.
         
         Returns:
             Dictionary of feature values
         """
         features: Dict[str, float] = {}
+        depot = route_depot if route_depot is not None else self.depot
         
-        # Basic distance features
-        features['dist_to_depot'] = float(self.dist_matrix[self.depot, request])
-        features['dist_from_current'] = float(self.dist_matrix[current_position, request])
+        # Basic distance features (use route depot so multi-depot is correct)
+        dist_from_current = float(self.dist_matrix[current_position, request])
+        features['dist_to_depot'] = float(self.dist_matrix[depot, request])
+        features['dist_from_current'] = dist_from_current
+        features['travel_distance'] = dist_from_current
         
         # Demand and capacity features
         features['demand'] = float(self.demands[request])
         features['remaining_capacity'] = float(self.capacity - current_load)
+        features['load_percentage'] = current_load / self.capacity
         
-        # Savings-like features
+        # Savings-like features (use route depot)
         features['savings'] = (
-            float(self.dist_matrix[self.depot, current_position]) +
-            float(self.dist_matrix[request, self.depot]) -
+            float(self.dist_matrix[depot, current_position]) +
+            float(self.dist_matrix[request, depot]) -
             float(self.dist_matrix[current_position, request])
         )
         
@@ -536,16 +542,19 @@ class VRPFeatureExtractor:
             tw_feasible = 1.0 if arrival <= due else 0.0
             slack_to_due = max(0.0, due - arrival)
 
-            features['arrival_time'] = arrival
-            features['due_time'] = due
+            #features['arrival_time'] = arrival
+            #features['due_time'] = due
+            #features['tw_feasible'] = tw_feasible
             features['wait_time'] = wait_time
-            features['tw_feasible'] = tw_feasible
             features['slack_to_due'] = slack_to_due
+            d_safe = max(dist_from_current, 1e-6)
+            features['route_urgency'] = (due - float(current_time)) / d_safe
         
         # GVRP battery features (if battery constraints exist)
         if self.has_battery and current_battery is not None:
             # Current battery state
             features['current_battery'] = float(current_battery)
+            features['battery_percentage'] = current_battery / self.battery_capacity
             
             # Energy needed to reach customer
             dist_to_customer = float(self.dist_matrix[current_position, request])
@@ -553,7 +562,7 @@ class VRPFeatureExtractor:
             features['energy_to_customer'] = energy_to_customer
             
             # Feasibility indicator
-            features['is_directly_reachable'] = 1.0 if current_battery >= energy_to_customer else 0.0
+            #features['is_directly_reachable'] = 1.0 if current_battery >= energy_to_customer else 0.0
             
             # Distance to nearest charging station
             if dist_to_nearest_charger is not None and request in dist_to_nearest_charger:

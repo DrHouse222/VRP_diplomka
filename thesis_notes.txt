@@ -16,6 +16,13 @@ cloning 20% and turning into charging stations
 first evaluate feasibility then select and the other way, capacity check first
 
 
+evrptw_to_multi_depot(instance, num_depots=2) in data_generation.py
+Behavior: Converts a single-depot EVRPTW instance to multi-depot by changing the instance in place and returning it.
+Depot layout: The original depot stays at index 0. Extra depots are added at the end of the node list. Their positions are fixed (no randomness):
+Bounding box of all nodes is computed.
+Centroid (cx, cy) and radius 0.4 * max(range_x, range_y) are computed.
+The num_depots - 1 new depots are placed on the circle around the centroid at angles 2π * k / (num_depots - 1) for k = 0, 1, ....
+
 
 Start:  Create a list of all unvisited customers.
         pre-calculate distance to nearest station for all nodes

@@ -7,33 +7,7 @@ pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
 
 
 TODO add/remove features
-TODO do parralel for num trucks and if customer remains do serial
-TODO download classic solomon dataset
-TODO GVRP depot not remove due date in remove_tw_from_gvrp()
 TODO log which terminals and functions are used in best solutions
-
-
-Depot Context Features (new):
-For each (customer, depot) evaluation:
-Spatial:
-- dist_to_depot: distance from customer to this specific depot
-- dist_to_depot_normalized: relative to other depots
-Depot Workload:
-- depot_routes_count: how many routes already created from this depot
-- depot_total_distance: total distance of all routes from this depot
-- depot_total_load: sum of demands served by this depot
-- depot_utilization: depot_total_load / (depot_routes_count * capacity)
-Relative Depot Performance:
-- is_nearest_depot: 1 if this is customer's nearest depot, 0 otherwise
-- depot_rank: which depot this is by distance (1st, 2nd, 3rd...)
-- distance_to_second_nearest: how much farther are other depots?
-
-Customer Context Features (existing, but depot-specific):
-- dist_from_depot (instead of dist_from_current)
-- savings: (dist_to_depot + dist_from_depot_to_customer - dist_depot_to_customer)
-- time_feasibility_at_depot
-- battery_feasibility_from_depot
-
 
 
 Functions

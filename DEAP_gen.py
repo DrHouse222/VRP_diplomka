@@ -8,8 +8,9 @@ from deap import base, creator, tools, gp, algorithms
 from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor, CordeauMDVRPInstance
 from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic
 from problem_types import VRP_PROBLEM_TYPE
-from data_generation import convert_vrptw_to_gvrptw, remove_tw_from_gvrp
+from data_generation import convert_vrptw_to_gvrptw, remove_tw_from_gvrp, evrptw_to_multi_depot
 import time
+import copy
 import matplotlib.pyplot as plt
 import glob
 import os
@@ -62,9 +63,24 @@ def evaluate_individual(individual, instances, bool_capacity=True):
     return (total_fitness,)
 
 
-def run_genetic_programming(instances, bool_capacity = True, population_size = 50, generations = 50):
+def run_genetic_programming(
+    instances,
+    bool_capacity: bool = True,
+    population_size: int = 50,
+    generations: int = 50,
+    time_limit_sec: float | None = None,
+    seed: int | None = None,
+    cxpb: float = 0.8,
+    mutpb: float = 0.15,
+):
     """Run genetic programming to evolve VRP scoring function."""
     
+    # Optional seeding for reproducibility
+    if seed is not None:
+        import random
+        random.seed(seed)
+        np.random.seed(seed)
+
     # Create toolbox
     toolbox, pset = create_toolbox()
     
@@ -110,20 +126,23 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
         print(logbook.stream)
     
     # Evolution loop
+    start_time = time.time()
     for gen in range(1, generations + 1):
+        if time_limit_sec is not None and (time.time() - start_time) >= time_limit_sec:
+            break
         # Select and clone the next generation individuals
         offspring = toolbox.select(population, len(population))
         offspring = list(map(toolbox.clone, offspring))
         
         # Apply crossover and mutation on the offspring
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
-            if np.random.random() < 0.7:  # cxpb TODO
+            if np.random.random() < cxpb:
                 toolbox.mate(child1, child2)
                 del child1.fitness.values
                 del child2.fitness.values
         
         for mutant in offspring:
-            if np.random.random() < 0.2:  # mutpb TODO
+            if np.random.random() < mutpb:
                 toolbox.mutate(mutant)
                 del mutant.fitness.values
         
@@ -133,11 +152,15 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
         
-        # Update Hall of Fame
+        # Update Hall of Fame (best of all time)
         hof.update(offspring)
         
-        # ELITISM: Select best individuals from population + offspring (μ+λ selection)
-        population[:] = tools.selBest(population + offspring, len(population))
+        # Next generation = offspring (tournament selection only, no elitism)
+        population[:] = offspring
+        # Inject the best individual of all time into the population (replace one random)
+        if hof:
+            idx = np.random.randint(len(population))
+            population[idx] = toolbox.clone(hof[0])
         
         # Append the current generation statistics to the logbook
         record = mstats.compile(population) if mstats else {}
@@ -151,7 +174,19 @@ def run_genetic_programming(instances, bool_capacity = True, population_size = 5
     return best_individual, logbook, pset
 
 
-def train_and_test_problem_type(all_instances, problem_type, n_train=6, n_test=-1, bool_capacity=True, population_size=30, generations=30):
+def train_and_test_problem_type(
+    all_instances,
+    problem_type,
+    n_train: int = 6,
+    n_test: int = -1,
+    bool_capacity: bool = True,
+    population_size: int = 30,
+    generations: int = 30,
+    time_limit_sec: float | None = None,
+    seed: int | None = None,
+    cxpb: float = 0.8,
+    mutpb: float = 0.15,
+):
     """
     Train on 'n_train' instances, Test on the rest.
     Prints detailed fitness comparison for every instance.
@@ -189,7 +224,11 @@ def train_and_test_problem_type(all_instances, problem_type, n_train=6, n_test=-
         instances=train_instances,
         bool_capacity=bool_capacity,
         population_size=population_size,
-        generations=generations
+        generations=generations,
+        time_limit_sec=time_limit_sec,
+        seed=seed,
+        cxpb=cxpb,
+        mutpb=mutpb,
     )
     
     # Get the evolved function
@@ -469,9 +508,9 @@ def load_instances_by_type():
 def main():
     # Choose variants
     bool_capacity = True
-    bool_TW = True
-    bool_green = False
-    bool_MD = False
+    bool_TW = False
+    bool_green = True
+    bool_MD = True
 
     # Load instances
     cvrp_instances, vrptw_instances, gvrp_instances, mdvrp_instances, mdvrptw_instances = load_instances_by_type()
@@ -481,12 +520,12 @@ def main():
     problem_map = {
         (False, False, False): ("CVRP", cvrp_instances),
         (True, False, False):  ("VRPTW", vrptw_instances),
-        (False, True, False):  ("GVRP", remove_tw_from_gvrp(gvrp_instances)),
+        (False, True, False):  ("GVRP", remove_tw_from_gvrp(copy.deepcopy(gvrp_instances))),
         (True, True, False):   ("G-VRPTW", gvrp_instances),
         (False, False, True):  ("MDCVRP", mdvrp_instances),
         (True, False, True):   ("MDVRPTW", mdvrptw_instances),
-        #(False, True, True):   ("GVRP-MD", remove_tw_from_gvrp(mdvrp_instances)),
-        #(True, True, True):    ("G-VRPTW-MD", mdvrp_instances)
+        (False, True, True):   ("GVRP-MD", evrptw_to_multi_depot(remove_tw_from_gvrp(copy.deepcopy(gvrp_instances)))),
+        (True, True, True):    ("G-VRPTW-MD", evrptw_to_multi_depot(gvrp_instances))
     }
 
     problem_type, instances = problem_map.get((bool_TW, bool_green, bool_MD))
@@ -500,8 +539,8 @@ def main():
             bool_capacity=bool_capacity,
             n_train=1,
             n_test=0,
-            population_size=1,
-            generations=1
+            population_size=100,
+            generations=10
         )
     else:
         print(f"No instances loaded for {problem_type}")

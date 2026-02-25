@@ -25,6 +25,9 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
     """
     n = instance.dimension
     depot = getattr(instance, "depot", 0)
+    depots = getattr(instance, "depots", None)
+    is_multi_depot = depots is not None and len(depots) > 1
+    depots_list = depots if is_multi_depot else [depot]
     
     # Auto-detect problem type
     has_tw = all(hasattr(instance, attr) for attr in ("ready_times", "due_dates", "service_times"))
@@ -33,8 +36,13 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
     # GVRP setup
     battery_cap = getattr(instance, "battery_capacity", float('inf')) if has_battery else float('inf')
     energy_per_dist = getattr(instance, "energy_consumption", 1.0)
-    has_max_travel_time = hasattr(instance, "max_travel_time")
-    max_travel_time = getattr(instance, "max_travel_time", float('inf')) if has_max_travel_time else float('inf')
+    max_travel_time_raw = getattr(instance, "max_travel_time", None)
+    if max_travel_time_raw is not None and max_travel_time_raw > 0 and np.isfinite(max_travel_time_raw):
+        has_max_travel_time = True
+        max_travel_time = float(max_travel_time_raw)
+    else:
+        has_max_travel_time = False
+        max_travel_time = float('inf')
     # Linear charging: time = charge_rate * energy_needed
     base_charge_time = 100.0  # Time to charge from 0% to 100%
     charge_rate = base_charge_time / battery_cap if has_battery and battery_cap > 0 else 0.0
@@ -62,9 +70,10 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
             min_dist = min(instance.dist_matrix[i, cs] for cs in stations)
             dist_to_nearest_charger[i] = min_dist
     
-    # Initialize unvisited set (exclude depot and charging stations)
+    # Initialize unvisited set (exclude all depots and charging stations)
     unvisited = set(range(0, n))
-    unvisited.discard(depot)
+    for d in depots_list:
+        unvisited.discard(d)
     if node_types is not None:
         for i in range(n):
             if node_types[i] == 2:  # Charging station
@@ -77,11 +86,65 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
     routes = []
 
     while unvisited:
-        route = [depot]
+        # Multi-depot: choose best depot–customer pair by nearest distance (feasible)
+        route_start_depot = depot
+        first_customer = None
+        if is_multi_depot:
+            best_dist = float('inf')
+            for candidate_depot in depots_list:
+                for customer in unvisited:
+                    demand = instance.demands[customer]
+                    if demand > max_capacity:
+                        continue
+                    dist_direct = instance.dist_matrix[candidate_depot, customer]
+                    energy_direct = dist_direct * energy_per_dist
+                    if has_battery and energy_direct > battery_cap:
+                        continue
+                    if has_battery:
+                        batt_after = battery_cap - energy_direct
+                        if batt_after < dist_to_nearest_charger[customer] * energy_per_dist:
+                            continue
+                    if has_tw:
+                        if dist_direct > instance.due_dates[customer]:
+                            continue
+                        ready = instance.ready_times[customer]
+                        service = instance.service_times[customer]
+                        dept_time = max(dist_direct, ready) + service
+                        dist_home = instance.dist_matrix[customer, candidate_depot]
+                        if dept_time + dist_home > instance.due_dates[candidate_depot]:
+                            continue
+                    if has_max_travel_time:
+                        service = getattr(instance, "service_times", np.zeros(n))[customer] if hasattr(instance, "service_times") else 0.0
+                        dist_home = instance.dist_matrix[customer, candidate_depot]
+                        arrival_at_depot = dist_direct + service + dist_home
+                        if arrival_at_depot > max_travel_time:
+                            continue
+                    if dist_direct < best_dist:
+                        best_dist = dist_direct
+                        route_start_depot = candidate_depot
+                        first_customer = customer
+            if first_customer is None:
+                break
+        route = [route_start_depot]
         load = 0.0
-        current_node = depot
+        current_node = route_start_depot
         current_time = 0.0
         current_battery = battery_cap
+        if is_multi_depot and first_customer is not None:
+            route.append(first_customer)
+            load += instance.demands[first_customer]
+            unvisited.remove(first_customer)
+            current_node = first_customer
+            dist_to_cust = instance.dist_matrix[route_start_depot, first_customer]
+            if has_tw:
+                arrival = current_time + dist_to_cust
+                ready = instance.ready_times[first_customer]
+                service = instance.service_times[first_customer]
+                current_time = max(arrival, ready) + service
+            else:
+                current_time += dist_to_cust
+            if has_battery:
+                current_battery -= dist_to_cust * energy_per_dist
 
         while True:
             feasible_candidates = []
@@ -123,9 +186,9 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                             ready = instance.ready_times[customer] if has_tw else 0.0
                             service = instance.service_times[customer] if has_tw else 0.0
                             dept_time = max(arrival_direct, ready) + service
-                            dist_home = instance.dist_matrix[customer, depot]
+                            dist_home = instance.dist_matrix[customer, route_start_depot]
                             
-                            if not has_tw or (dept_time + dist_home <= instance.due_dates[depot]):
+                            if not has_tw or (dept_time + dist_home <= instance.due_dates[route_start_depot]):
                                 valid_move_found = True
                                 best_move_info = {
                                     'is_direct': True,
@@ -182,15 +245,15 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                             ready = instance.ready_times[customer]
                             service = instance.service_times[customer]
                             dept_cust = max(arrival_at_cust, ready) + service
-                            dist_home = instance.dist_matrix[customer, depot]
+                            dist_home = instance.dist_matrix[customer, route_start_depot]
                             arrival_at_depot = dept_cust + dist_home
-                            if arrival_at_depot > instance.due_dates[depot] or (has_max_travel_time and arrival_at_depot > max_travel_time):
+                            if arrival_at_depot > instance.due_dates[route_start_depot] or (has_max_travel_time and arrival_at_depot > max_travel_time):
                                 continue
                         else:
                             # For non-TW, check max travel time (if applicable)
                             if has_max_travel_time:
                                 service = getattr(instance, "service_times", np.zeros(n))[customer] if hasattr(instance, "service_times") else 0.0
-                                dist_home = instance.dist_matrix[customer, depot]
+                                dist_home = instance.dist_matrix[customer, route_start_depot]
                                 arrival_at_depot = arrival_at_cust + service + dist_home
                                 if arrival_at_depot > max_travel_time:
                                     continue
@@ -216,8 +279,8 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
             # No feasible candidates - finish route
             if not feasible_candidates:
                 # Check if we need to charge before returning to depot
-                if has_battery and current_node != depot:
-                    dist_to_depot = instance.dist_matrix[current_node, depot]
+                if has_battery and current_node != route_start_depot:
+                    dist_to_depot = instance.dist_matrix[current_node, route_start_depot]
                     energy_needed = dist_to_depot * energy_per_dist
                     
                     if current_battery < energy_needed and stations:
@@ -233,7 +296,7 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                             if d1 >= min_total_dist:
                                 break
                             
-                            d2 = instance.dist_matrix[station, depot]
+                            d2 = instance.dist_matrix[station, route_start_depot]
                             e1 = d1 * energy_per_dist
                             e2 = d2 * energy_per_dist
                             
@@ -253,7 +316,7 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                                 charge_time = compute_charge_time(batt_at_station)
                                 dept_stat = arrival_stat + charge_time
                                 arrival_depot = dept_stat + d2
-                                if arrival_depot > instance.due_dates[depot]:
+                                if arrival_depot > instance.due_dates[route_start_depot]:
                                     continue
                             
                             min_total_dist = total_dist
@@ -270,11 +333,11 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
                             current_time += charge_time
                             current_node = best_station
                 
-                route.append(depot)
+                route.append(route_start_depot)
                 
                 # Check if we added any customers to this route
-                # If route is just [depot, depot], no customers were served
-                if len(route) == 2 and route[0] == depot and route[1] == depot:
+                # If route is just [route_start_depot, route_start_depot], no customers were served
+                if len(route) == 2 and route[0] == route_start_depot and route[1] == route_start_depot:
                     # No customers could be served - force-add nearest customer (relaxing time windows)
                     if unvisited:
                         # Find nearest customer ignoring time windows
@@ -360,9 +423,13 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
       - Time Windows (Hard)
       - Battery Constraints (Reachability + Safety Buffer)
       - Automatic Charging Station Insertion
+      - Multi-depot: each customer assigned to nearest feasible depot; only merge routes sharing same depot.
     """
     n = instance.dimension
     depot = getattr(instance, "depot", 0)
+    depots = getattr(instance, "depots", None)
+    is_multi_depot = depots is not None and len(depots) > 1
+    depots_list = list(depots) if is_multi_depot else [depot]
     
     if bool_capacity:
         max_capacity = getattr(instance, "capacity", 0.0)
@@ -418,27 +485,57 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
             k_nearest_stations[i] = station_arr[sorted_indices].tolist()
     
     has_tw = all(hasattr(instance, attr) for attr in ("ready_times", "due_dates", "service_times"))
-    has_max_travel_time = hasattr(instance, "max_travel_time")
-    max_travel_time = getattr(instance, "max_travel_time", float('inf')) if has_max_travel_time else float('inf')
+    max_travel_time_raw = getattr(instance, "max_travel_time", None)
+    if max_travel_time_raw is not None and max_travel_time_raw > 0 and np.isfinite(max_travel_time_raw):
+        has_max_travel_time = True
+        max_travel_time = float(max_travel_time_raw)
+    else:
+        has_max_travel_time = False
+        max_travel_time = float('inf')
     
-    # Get customers only
+    # Get customers only (exclude all depots and charging stations)
     customers = []
     if node_types is not None:
         customers = [i for i in range(n) if node_types[i] == 1]
     else:
-        customers = [i for i in range(n) if i != depot]
+        customers = [i for i in range(n) if i not in depots_list]
+    
+    # Multi-depot: assign each customer to nearest feasible depot
+    customer_to_depot = {}
+    for c in customers:
+        if is_multi_depot:
+            best_d = None
+            best_dist = float('inf')
+            for d in depots_list:
+                if instance.demands[c] > max_capacity:
+                    continue
+                dist_d = instance.dist_matrix[d, c]
+                if has_battery and dist_d * energy_per_dist > battery_cap:
+                    continue
+                if has_battery and (battery_cap - dist_d * energy_per_dist) < dist_to_nearest_charger[c] * energy_per_dist:
+                    continue
+                if has_tw and dist_d > instance.due_dates[c]:
+                    continue
+                if dist_d < best_dist:
+                    best_dist = dist_d
+                    best_d = d
+            customer_to_depot[c] = best_d if best_d is not None else depots_list[0]
+        else:
+            customer_to_depot[c] = depot
     
     # ==================== STEP 1: CREATE INITIAL ROUTES ====================
-    # Each customer starts in its own route: depot -> customer -> depot
-    routes = {}  # route_id -> {route: [nodes], load: float, customers: set}
+    # Each customer starts in its own route: assigned_depot -> customer -> assigned_depot
+    routes = {}  # route_id -> {route: [nodes], load: float, customers: set, depot: int}
     route_id_counter = 0
     customer_to_route = {}  # customer -> route_id
     
     for customer in customers:
+        route_depot = customer_to_depot[customer]
         routes[route_id_counter] = {
-            'route': [depot, customer, depot],
+            'route': [route_depot, customer, route_depot],
             'load': instance.demands[customer],
-            'customers': {customer}
+            'customers': {customer},
+            'depot': route_depot
         }
         customer_to_route[customer] = route_id_counter
         route_id_counter += 1
@@ -450,15 +547,14 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
         for j in range(i + 1, len(customers)):
             cust_i = customers[i]
             cust_j = customers[j]
-            
-            # Classic Clarke-Wright savings formula
-            # s(i,j) = d(depot,i) + d(depot,j) - d(i,j)
-            d_0_i = instance.dist_matrix[depot, cust_i]
-            d_0_j = instance.dist_matrix[depot, cust_j]
+            # Only merge routes that share the same depot
+            if customer_to_depot[cust_i] != customer_to_depot[cust_j]:
+                continue
+            d_depot = customer_to_depot[cust_i]
+            d_0_i = instance.dist_matrix[d_depot, cust_i]
+            d_0_j = instance.dist_matrix[d_depot, cust_j]
             d_i_j = instance.dist_matrix[cust_i, cust_j]
-            
             saving = d_0_i + d_0_j - d_i_j
-            
             savings.append({
                 'customers': (cust_i, cust_j),
                 'saving': saving
@@ -540,9 +636,10 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
         
         return False, None, None, None
     
-    def validate_route(route_nodes):
+    def validate_route(route_nodes, route_depot):
         """
         Validate entire route with all constraints.
+        route_depot: depot this route starts and ends at (for multi-depot).
         Returns: (is_valid, final_route_with_stations)
         """
         if len(route_nodes) < 3:  # depot + at least 1 customer + depot
@@ -551,8 +648,8 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
         load = 0.0
         current_time = 0.0
         current_battery = battery_cap
-        current_node = depot
-        final_route = [depot]
+        current_node = route_depot
+        final_route = [route_depot]
         
         # Process customers (skip first depot, last depot)
         for i in range(1, len(route_nodes) - 1):
@@ -599,24 +696,24 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
             current_node = customer
         
         # Return to depot
-        dist_to_depot = instance.dist_matrix[current_node, depot]
+        dist_to_depot = instance.dist_matrix[current_node, route_depot]
         energy_needed = dist_to_depot * energy_per_dist
         
         if current_battery >= energy_needed:
             # Direct return
             arrival_depot = current_time + dist_to_depot
             
-            tw_ok = not has_tw or arrival_depot <= instance.due_dates[depot]
+            tw_ok = not has_tw or arrival_depot <= instance.due_dates[route_depot]
             travel_ok = not has_max_travel_time or arrival_depot <= max_travel_time
             
             if tw_ok and travel_ok:
-                final_route.append(depot)
+                final_route.append(route_depot)
                 return True, final_route
         
         # Try via charging station
         if has_battery:
             stations_from_current = set(k_nearest_stations.get(current_node, []))
-            stations_near_depot = set(k_nearest_stations.get(depot, []))
+            stations_near_depot = set(k_nearest_stations.get(route_depot, []))
             candidate_stations = list(stations_from_current | stations_near_depot)
             
             if not candidate_stations:
@@ -624,7 +721,7 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
             
             for station in candidate_stations:
                 d1 = instance.dist_matrix[current_node, station]
-                d2 = instance.dist_matrix[station, depot]
+                d2 = instance.dist_matrix[station, route_depot]
                 e1 = d1 * energy_per_dist
                 e2 = d2 * energy_per_dist
                 
@@ -636,12 +733,12 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
                 charge_time = compute_charge_time(batt_at_station)
                 arrival_depot = arrival_stat + charge_time + d2
                 
-                tw_ok = not has_tw or arrival_depot <= instance.due_dates[depot]
+                tw_ok = not has_tw or arrival_depot <= instance.due_dates[route_depot]
                 travel_ok = not has_max_travel_time or arrival_depot <= max_travel_time
                 
                 if tw_ok and travel_ok:
                     final_route.append(station)
-                    final_route.append(depot)
+                    final_route.append(route_depot)
                     return True, final_route
         
         return False, None
@@ -660,9 +757,14 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
         route_i = routes[route_i_id]
         route_j = routes[route_j_id]
         
+        # Only merge routes that share the same depot
+        if route_i['depot'] != route_j['depot']:
+            continue
+        
+        depot_ij = route_i['depot']
         # Get route without depot markers
-        route_i_customers = [c for c in route_i['route'] if c != depot]
-        route_j_customers = [c for c in route_j['route'] if c != depot]
+        route_i_customers = [c for c in route_i['route'] if c != depot_ij]
+        route_j_customers = [c for c in route_j['route'] if c != depot_ij]
         
         # Check if customers are at route ends (required for Clarke-Wright)
         i_is_first = (route_i_customers[0] == cust_i)
@@ -703,22 +805,23 @@ def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
         # Try each merge order
         merged = False
         for merged_customers in merge_orders:
-            # Build route with depots
-            test_route = [depot] + merged_customers + [depot]
+            # Build route with depot (same depot for both routes)
+            test_route = [depot_ij] + merged_customers + [depot_ij]
             
             # Validate with all constraints
-            is_valid, final_route = validate_route(test_route)
+            is_valid, final_route = validate_route(test_route, depot_ij)
             
             if is_valid:
                 # Merge successful!
                 # Delete old routes
                 del routes[route_j_id]
                 
-                # Update route_i with merged route
+                # Update route_i with merged route (keep same depot)
                 routes[route_i_id] = {
                     'route': final_route,
                     'load': new_load,
-                    'customers': route_i['customers'] | route_j['customers']
+                    'customers': route_i['customers'] | route_j['customers'],
+                    'depot': depot_ij
                 }
                 
                 # Update customer mappings

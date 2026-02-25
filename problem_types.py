@@ -24,7 +24,8 @@ class VRPProblemType:
     def __init__(self):
         # Base features (always available)
         self.base_feature_names = [
-            'dist_to_depot', 'dist_from_current', 'demand', 'remaining_capacity', 'savings'
+            'dist_to_depot', 'dist_from_current', 'demand', 'remaining_capacity', 'savings',
+            'route_urgency', 'travel_time', 'travel_distance'
         ]
     
         # Time window features (only for CVRPTW)
@@ -221,14 +222,14 @@ class VRPProblemType:
 
         # Time window setup
         has_tw = self.has_time_windows(instance)
-        # Check for max_travel_time and normalize it
-        max_travel_time_raw = getattr(instance, "max_travel_time", None)
-        if max_travel_time_raw is not None and max_travel_time_raw > 0 and np.isfinite(max_travel_time_raw):
-            has_max_travel_time = True
-            max_travel_time = float(max_travel_time_raw)
+        # Max travel: instance attribute "max_travel_time" is interpreted as max travelled *distance* per route
+        max_travel_raw = getattr(instance, "max_travel_time", None)
+        if max_travel_raw is not None and max_travel_raw > 0 and np.isfinite(max_travel_raw):
+            has_max_travel_dist = True
+            max_travel_dist = float(max_travel_raw)
         else:
-            has_max_travel_time = False
-            max_travel_time = float('inf')
+            has_max_travel_dist = False
+            max_travel_dist = float('inf')
 
         # Initialize unvisited nodes
         unvisited = set(range(0, n))
@@ -298,7 +299,8 @@ class VRPProblemType:
                             current_position=candidate_depot,
                             current_time=0.0 if has_tw else 0.0,
                             current_battery=battery_cap if has_battery else None,
-                            dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None
+                            dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None,
+                            route_depot=candidate_depot
                         )
                         features['dist_from_current'] = dist_direct
                         features['savings'] = (
@@ -314,10 +316,10 @@ class VRPProblemType:
                         except Exception:
                             score = 1e6
                         
-                        # Soft constraint: penalize exceeding max_travel_time
-                        if has_max_travel_time and arrival_at_depot is not None and arrival_at_depot > max_travel_time:
-                            violation = arrival_at_depot - max_travel_time
-                            score += violation  # penalty proportional to violation
+                        # Soft constraint: penalize exceeding max travel distance (depot->customer->depot)
+                        route_dist = dist_direct + instance.dist_matrix[customer, candidate_depot]
+                        if has_max_travel_dist and route_dist > max_travel_dist:
+                            score += (route_dist - max_travel_dist)
                         
                         if score < best_score:
                             best_score = score
@@ -338,15 +340,17 @@ class VRPProblemType:
             current_node = route_start_depot
             current_time = 0.0
             current_battery = battery_cap
+            current_route_distance = 0.0  # total distance travelled so far on this route (for max_travel_dist)
             
             # If multi-depot and we selected a first customer, add it immediately
             if is_multi_depot and first_customer is not None:
+                dist_to_cust = instance.dist_matrix[route_start_depot, first_customer]
                 route.append(first_customer)
                 load += instance.demands[first_customer]
                 unvisited.remove(first_customer)
                 current_node = first_customer
+                current_route_distance = dist_to_cust
                 
-                dist_to_cust = instance.dist_matrix[route_start_depot, first_customer]
                 if has_tw:
                     arrival = current_time + dist_to_cust
                     ready = instance.ready_times[first_customer]
@@ -415,11 +419,12 @@ class VRPProblemType:
                                 dept_time = max(arrival_direct, ready) + service
                                 dist_home = instance.dist_matrix[customer, route_start_depot]
                                 arrival_at_depot = dept_time + dist_home
+                                route_dist_if_added = current_route_distance + dist_direct + dist_home
 
                                 tw_ok = not has_tw or (arrival_at_depot <= instance.due_dates[route_start_depot])
-                                travel_time_ok = not has_max_travel_time or (arrival_at_depot <= max_travel_time)
+                                travel_dist_ok = not has_max_travel_dist or (route_dist_if_added <= max_travel_dist)
 
-                                if tw_ok and travel_time_ok:
+                                if tw_ok and travel_dist_ok:
                                     valid_move_found = True
                                     best_move_info = {
                                         'is_direct': True,
@@ -478,14 +483,14 @@ class VRPProblemType:
                                 if arrival_at_depot > instance.due_dates[route_start_depot]:
                                     continue
                                 
-                                if has_max_travel_time and arrival_at_depot > max_travel_time:
+                                route_dist_if_added = current_route_distance + total_dist + instance.dist_matrix[customer, route_start_depot]
+                                if has_max_travel_dist and route_dist_if_added > max_travel_dist:
                                     continue
                             else:
-                                if has_max_travel_time:
-                                    service = getattr(instance, "service_times", np.zeros(n))[customer]
-                                    dist_home = instance.dist_matrix[customer, depot]
-                                    arrival_at_depot = arrival_at_cust + service + dist_home
-                                    if arrival_at_depot > max_travel_time:
+                                if has_max_travel_dist:
+                                    dist_home = instance.dist_matrix[customer, route_start_depot]
+                                    route_dist_if_added = current_route_distance + total_dist + dist_home
+                                    if route_dist_if_added > max_travel_dist:
                                         continue
                                     
                             valid_move_found = True
@@ -509,7 +514,8 @@ class VRPProblemType:
                         current_position=current_node,
                         current_time=current_time if has_tw else 0.0,
                         current_battery=current_battery if has_battery else None,
-                        dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None
+                        dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None,
+                        route_depot=route_start_depot
                     )
 
                     actual_dist = best_move_info['dist']
@@ -576,16 +582,9 @@ class VRPProblemType:
                                     arrival_depot = dept_stat + d2
                                     if arrival_depot > instance.due_dates[route_start_depot]:
                                         continue
-                                    if has_max_travel_time and arrival_depot > max_travel_time:
-                                        continue
-                                else:
-                                    if has_max_travel_time:
-                                        arrival_stat = current_time + d1
-                                        batt_at_station = current_battery - e1
-                                        charge_time = compute_charge_time(batt_at_station)
-                                        arrival_depot = arrival_stat + charge_time + d2
-                                        if arrival_depot > max_travel_time:
-                                            continue
+                                route_dist_return = current_route_distance + d1 + d2
+                                if has_max_travel_dist and route_dist_return > max_travel_dist:
+                                    continue
 
                                 total_dist = d1 + d2
                                 if total_dist < min_total_dist:
@@ -600,6 +599,7 @@ class VRPProblemType:
                                 charge_time = compute_charge_time(current_battery)
                                 current_battery = battery_cap
                                 current_time += charge_time
+                                current_route_distance += instance.dist_matrix[current_node, best_station]  # leg to station
                                 current_node = best_station
                             else:
                                 # FALLBACK: No k-nearest stations work, try ALL stations
@@ -637,6 +637,7 @@ class VRPProblemType:
 
                                 if best_station is not None:
                                     route.append(best_station)
+                                    current_route_distance += instance.dist_matrix[current_node, best_station]
                                     energy_to_station = instance.dist_matrix[current_node, best_station] * energy_per_dist
                                     current_battery -= energy_to_station
                                     current_time += instance.dist_matrix[current_node, best_station]
@@ -675,6 +676,7 @@ class VRPProblemType:
                     travel_to_cust = info['dist']
 
                 route.append(best_customer)
+                current_route_distance += info['dist']  # leg to customer (direct or via station)
                 load += instance.demands[best_customer]
                 unvisited.remove(best_customer)
                 customers_added_this_route += 1
@@ -700,7 +702,6 @@ class VRPProblemType:
         if unvisited:
             logging.warning(f"Algorithm completed with {len(unvisited)} unvisited customers: {sorted(list(unvisited))}")
 
-        print(f"Routes: {routes}")
         return routes
 
 
