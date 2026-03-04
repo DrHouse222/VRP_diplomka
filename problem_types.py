@@ -25,7 +25,8 @@ class VRPProblemType:
         # Base features (always available)
         self.base_feature_names = [
             'dist_to_depot', 'dist_from_current', 'demand', 'remaining_capacity', 'savings',
-            'route_urgency', 'travel_time', 'travel_distance'
+            'route_urgency', 'travel_time', 'travel_distance',
+            'depot_relative_workload', 'depot_distance_advantage', 'depot_rank'
         ]
     
         # Time window features (only for CVRPTW)
@@ -100,12 +101,20 @@ class VRPProblemType:
             except:
                 return 1.0
         pset.addPrimitive(protected_div, 2)
+
+        # Min / Max primitives (printed as min / max in GP expressions)
+        def safe_min(a, b):
+            return a if a <= b else b
+
+        def safe_max(a, b):
+            return a if a >= b else b
+
+        pset.addPrimitive(safe_min, 2, name="min")
+        pset.addPrimitive(safe_max, 2, name="max")
         
         # Constants
         pset.addTerminal(0.0)
         pset.addTerminal(1.0)
-        pset.addTerminal(2.0)
-        pset.addTerminal(0.5)
         pset.addTerminal(-1.0)
         
         return pset
@@ -113,7 +122,8 @@ class VRPProblemType:
     def compute_cost(self, instance, routes) -> float:
         """
         Compute cost for VRP solution.
-        Returns total distance traveled (including detours to charging stations).
+        Returns total distance traveled (including detours to charging stations),
+        plus a penalty for any unserved customers.
         """
         total_distance = 0.0
         demands = getattr(instance, "demands", None)
@@ -122,6 +132,7 @@ class VRPProblemType:
         if demands is None or dist_matrix is None:
             raise ValueError("Instance must have 'demands' and 'dist_matrix' attributes.")
         
+        # Route distance
         for route in routes:
             if not route:
                 continue
@@ -131,7 +142,33 @@ class VRPProblemType:
                 u, v = route[i], route[i + 1]
                 travel = float(dist_matrix[u, v])
                 total_distance += travel
-                
+
+        # Penalty for unserved customers
+        node_types = getattr(instance, "node_types", None)
+        depot = getattr(instance, "depot", 0)
+        n = len(demands)
+
+        if node_types is not None:
+            customers = {i for i in range(n) if node_types[i] == 1}
+        else:
+            customers = {i for i in range(n) if i != depot}
+
+        served_customers = set()
+        for route in routes:
+            for node in route:
+                if node in customers:
+                    served_customers.add(node)
+
+        unserved_customers = customers - served_customers
+        if unserved_customers:
+            # Penalty scaled to instance: base on average distance, but at least 1000 per customer
+            try:
+                avg_dist = float(np.mean(dist_matrix))
+            except Exception:
+                avg_dist = 1.0
+            penalty_per_customer = max(1000.0, 10.0 * avg_dist)
+            total_distance += penalty_per_customer * len(unserved_customers)
+
         return total_distance
     
     def solve_with_scoring(self, instance, feature_extractor, scoring_func, bool_capacity=True) -> List[List[int]]:
@@ -152,6 +189,10 @@ class VRPProblemType:
             depots_list = depots
         else:
             depots_list = [depot]
+
+        # Track how many routes each depot starts (for depot_relative_workload)
+        depot_route_counts = {d: 0 for d in depots_list}
+        total_routes_started = 0
 
         if bool_capacity:
             max_capacity = getattr(instance, "capacity", 0.0)
@@ -300,17 +341,28 @@ class VRPProblemType:
                             current_time=0.0 if has_tw else 0.0,
                             current_battery=battery_cap if has_battery else None,
                             dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None,
-                            route_depot=candidate_depot
+                            route_depot=candidate_depot,
+                            bool_capacity=bool_capacity,
                         )
+                        # Depot-relative workload for this candidate depot:
+                        if is_multi_depot:
+                            total_started = sum(depot_route_counts.values()) or 1
+                            rel_workload = depot_route_counts.get(candidate_depot, 0) / total_started
+                        else:
+                            rel_workload = 0.0
+                        features["depot_relative_workload"] = rel_workload
                         features['dist_from_current'] = dist_direct
                         features['savings'] = (
                             features.get('dist_to_depot', 0.0) +
                             features.get('dist_to_depot_from_request', 0.0) -
                             dist_direct
                         )
-                        features["remaining_capacity"] = max_capacity - demand
+                        if bool_capacity:
+                            features["remaining_capacity"] = max_capacity - demand
+                        else:
+                            features["remaining_capacity"] = 0.0
                         feature_values = self.extract_feature_values(features)
-                        
+
                         try:
                             score = scoring_func(*feature_values)
                         except Exception:
@@ -330,6 +382,10 @@ class VRPProblemType:
                     break
                 
                 route_start_depot, first_customer = best_depot_customer_pair
+
+                # We are starting a new route from this depot
+                depot_route_counts[route_start_depot] += 1
+                total_routes_started += 1
                 
             else:
                 first_customer = None
@@ -425,13 +481,48 @@ class VRPProblemType:
                                 travel_dist_ok = not has_max_travel_dist or (route_dist_if_added <= max_travel_dist)
 
                                 if tw_ok and travel_dist_ok:
-                                    valid_move_found = True
-                                    best_move_info = {
-                                        'is_direct': True,
-                                        'dist': dist_direct,
-                                        'arrival': arrival_direct,
-                                        'station': None
-                                    }
+                                    # Conservative check: from this customer, can we still
+                                    # reach a charging station, charge, and return to depot
+                                    # within depot due date and max travel distance?
+                                    conservative_ok = True
+                                    if has_battery and stations:
+                                        stat = nearest_station_idx.get(customer, None)
+                                        if stat is not None:
+                                            d_cs = instance.dist_matrix[customer, stat]
+                                            e_cs = d_cs * energy_per_dist
+                                            # battery at customer after direct move
+                                            batt_cust = batt_after
+                                            if batt_cust < e_cs:
+                                                conservative_ok = False
+                                            else:
+                                                d_sd = instance.dist_matrix[stat, route_start_depot]
+                                                e_sd = d_sd * energy_per_dist
+                                                if battery_cap < e_sd:
+                                                    conservative_ok = False
+                                                else:
+                                                    # Distance check: route so far + to customer + cust->stat + stat->depot
+                                                    full_cycle_dist = current_route_distance + dist_direct + d_cs + d_sd
+                                                    if has_max_travel_dist and full_cycle_dist > max_travel_dist:
+                                                        conservative_ok = False
+                                                    elif has_tw:
+                                                        # Time check: end-of-service at customer -> station -> charge -> depot
+                                                        arrival_stat2 = dept_time + d_cs
+                                                        batt_at_station2 = batt_cust - e_cs
+                                                        charge_time2 = compute_charge_time(batt_at_station2)
+                                                        arrival_depot2 = arrival_stat2 + charge_time2 + d_sd
+                                                        if arrival_depot2 > instance.due_dates[route_start_depot]:
+                                                            conservative_ok = False
+                                        else:
+                                            conservative_ok = False
+
+                                    if conservative_ok:
+                                        valid_move_found = True
+                                        best_move_info = {
+                                            'is_direct': True,
+                                            'dist': dist_direct,
+                                            'arrival': arrival_direct,
+                                            'station': None
+                                        }
 
                     # --- OPTION B: VIA CHARGING STATION ---
                     if not valid_move_found and has_battery:
@@ -492,7 +583,40 @@ class VRPProblemType:
                                     route_dist_if_added = current_route_distance + total_dist + dist_home
                                     if route_dist_if_added > max_travel_dist:
                                         continue
-                                    
+                            
+                            # Conservative check from customer->nearest station->depot
+                            conservative_ok = True
+                            if has_battery and stations:
+                                stat = nearest_station_idx.get(customer, None)
+                                if stat is not None:
+                                    d_cs = instance.dist_matrix[customer, stat]
+                                    e_cs = d_cs * energy_per_dist
+                                    # battery after arriving at customer (fully charged at station then travel to customer)
+                                    batt_cust = battery_cap - e2
+                                    if batt_cust < e_cs:
+                                        conservative_ok = False
+                                    else:
+                                        d_sd = instance.dist_matrix[stat, route_start_depot]
+                                        e_sd = d_sd * energy_per_dist
+                                        if battery_cap < e_sd:
+                                            conservative_ok = False
+                                        else:
+                                            full_cycle_dist = current_route_distance + total_dist + d_cs + d_sd
+                                            if has_max_travel_dist and full_cycle_dist > max_travel_dist:
+                                                conservative_ok = False
+                                            elif has_tw:
+                                                arrival_stat2 = dept_cust + d_cs
+                                                batt_at_station2 = batt_cust - e_cs
+                                                charge_time2 = compute_charge_time(batt_at_station2)
+                                                arrival_depot2 = arrival_stat2 + charge_time2 + d_sd
+                                                if arrival_depot2 > instance.due_dates[route_start_depot]:
+                                                    conservative_ok = False
+                                else:
+                                    conservative_ok = False
+
+                            if not conservative_ok:
+                                continue
+
                             valid_move_found = True
                             min_total_dist = total_dist
                             best_move_info = {
@@ -515,7 +639,8 @@ class VRPProblemType:
                         current_time=current_time if has_tw else 0.0,
                         current_battery=current_battery if has_battery else None,
                         dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None,
-                        route_depot=route_start_depot
+                        route_depot=route_start_depot,
+                        bool_capacity=bool_capacity,
                     )
 
                     actual_dist = best_move_info['dist']
@@ -525,8 +650,24 @@ class VRPProblemType:
                         features.get('dist_to_depot_from_request', 0.0) -
                         actual_dist
                     )
-                    features["remaining_capacity"] = max_capacity - (load + demand)
+                    if is_multi_depot:
+                        rel_workload = depot_route_counts.get(route_start_depot, 0) / max(1, total_routes_started)
+                        features["depot_relative_workload"] = rel_workload
+
+                    if bool_capacity:
+                        features["remaining_capacity"] = max_capacity - (load + demand)
+                    else:
+                        features["remaining_capacity"] = 0.0
                     feature_values = self.extract_feature_values(features)
+
+                    # Debug: detect non-finite inputs to GP scoring function
+                    if not np.all(np.isfinite(feature_values)):
+                        print("\n[solve_with_scoring] Non-finite feature values in inner routing scoring")
+                        print("  problem_type:", self.name)
+                        print("  current_node:", current_node, "candidate:", customer)
+                        print("  route:", route)
+                        print("  features:", features)
+                        print("  feature_values:", feature_values)
 
                     try:
                         score = scoring_func(*feature_values)
@@ -547,23 +688,16 @@ class VRPProblemType:
                         return routes if routes else [[route_start_depot, route_start_depot]]
 
                     # Try to return to depot (with charging if needed)
-                    best_station = None  # ensure defined before use below
-                    candidate_stations = []
                     if has_battery and current_node != route_start_depot:
                         dist_to_depot = instance.dist_matrix[current_node, route_start_depot]
                         energy_needed = dist_to_depot * energy_per_dist
 
+                        # If we cannot go directly to depot, go via the best (nearest feasible) station
                         if current_battery < energy_needed and stations:
-                            min_total_dist = float('inf')
+                            best_station = None
+                            min_total_dist = float("inf")
 
-                            stations_from_current = set(k_nearest_stations.get(current_node, []))
-                            stations_near_depot = set(k_nearest_stations.get(route_start_depot, []))
-                            candidate_stations = list(stations_from_current | stations_near_depot)
-
-                            if not candidate_stations:
-                                candidate_stations = stations[:K_NEAREST]
-
-                            for station in candidate_stations:
+                            for station in stations:
                                 d1 = instance.dist_matrix[current_node, station]
                                 d2 = instance.dist_matrix[station, route_start_depot]
                                 e1 = d1 * energy_per_dist
@@ -582,6 +716,7 @@ class VRPProblemType:
                                     arrival_depot = dept_stat + d2
                                     if arrival_depot > instance.due_dates[route_start_depot]:
                                         continue
+
                                 route_dist_return = current_route_distance + d1 + d2
                                 if has_max_travel_dist and route_dist_return > max_travel_dist:
                                     continue
@@ -593,62 +728,15 @@ class VRPProblemType:
 
                             if best_station is not None:
                                 route.append(best_station)
-                                energy_to_station = instance.dist_matrix[current_node, best_station] * energy_per_dist
+                                d1 = instance.dist_matrix[current_node, best_station]
+                                current_route_distance += d1
+                                energy_to_station = d1 * energy_per_dist
                                 current_battery -= energy_to_station
-                                current_time += instance.dist_matrix[current_node, best_station]
+                                current_time += d1
                                 charge_time = compute_charge_time(current_battery)
                                 current_battery = battery_cap
                                 current_time += charge_time
-                                current_route_distance += instance.dist_matrix[current_node, best_station]  # leg to station
                                 current_node = best_station
-                            else:
-                                # FALLBACK: No k-nearest stations work, try ALL stations
-                                best_station = None
-                                min_total_dist = float('inf')
-
-                                for station in stations:  # Check ALL stations
-                                    d1 = instance.dist_matrix[current_node, station]
-                                    d2 = instance.dist_matrix[station, route_start_depot]
-                                    e1 = d1 * energy_per_dist
-                                    e2 = d2 * energy_per_dist
-
-                                    if current_battery < e1:
-                                        continue
-                                    if battery_cap < e2:
-                                        continue
-                                    
-                                    # Relaxed time window check - allow slight violations
-                                    if has_tw:
-                                        arrival_stat = current_time + d1
-                                        batt_at_station = current_battery - e1
-                                        charge_time = compute_charge_time(batt_at_station)
-                                        dept_stat = arrival_stat + charge_time
-                                        arrival_depot = dept_stat + d2
-
-                                        # Allow small time window violations in emergency
-                                        time_violation = max(0, arrival_depot - instance.due_dates[route_start_depot])
-                                        if time_violation > 100:  # Only reject if violation is large
-                                            continue
-                                        
-                                    total_dist = d1 + d2
-                                    if total_dist < min_total_dist:
-                                        min_total_dist = total_dist
-                                        best_station = station
-
-                                if best_station is not None:
-                                    route.append(best_station)
-                                    current_route_distance += instance.dist_matrix[current_node, best_station]
-                                    energy_to_station = instance.dist_matrix[current_node, best_station] * energy_per_dist
-                                    current_battery -= energy_to_station
-                                    current_time += instance.dist_matrix[current_node, best_station]
-                                    charge_time = compute_charge_time(current_battery)
-                                    current_battery = battery_cap
-                                    current_time += charge_time
-                                    current_node = best_station
-                                    logging.info(f"Emergency station {best_station} used successfully.")
-                                else:
-                                    # Force return to depot (mark as constraint violation)
-                                    logging.error(f"CONSTRAINT VIOLATION: Forcing return to depot from node {current_node}")
 
                     route.append(route_start_depot)
                     break

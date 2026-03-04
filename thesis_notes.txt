@@ -24,6 +24,8 @@ Centroid (cx, cy) and radius 0.4 * max(range_x, range_y) are computed.
 The num_depots - 1 new depots are placed on the circle around the centroid at angles 2π * k / (num_depots - 1) for k = 0, 1, ....
 
 
+using serial because in this: Evolving_routing_policies_for_electric_vehicles_by.pdf it got the best results
+
 Start:  Create a list of all unvisited customers.
         pre-calculate distance to nearest station for all nodes
 Main Loop (until all customers are visited):

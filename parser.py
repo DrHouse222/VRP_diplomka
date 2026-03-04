@@ -490,11 +490,26 @@ class VRPFeatureExtractor:
             self.battery_capacity = float('inf')
             self.energy_consumption = 1.0
             self.stations = []
+
+        # Depot list (for multi-depot instances) and total customer demand (for workload)
+        self.depots = getattr(instance, "depots", None)
+        if self.depots is None:
+            self.depots = [self.depot]
+        self.depots = list(self.depots)
+
+        n_all = len(self.demands)
+        if hasattr(self, "node_types") and self.node_types is not None:
+            self.customers = [i for i in range(n_all) if self.node_types[i] == 1]
+        else:
+            self.customers = [i for i in range(n_all) if i not in self.depots]
+        self.total_customer_demand = float(
+            sum(float(self.demands[i]) for i in self.customers)
+        ) if self.customers else 1.0
     
     def extract_features(self, request: int, current_route: List[int], 
                         current_load: float, current_position: int, current_time: float = 0.0,
                         current_battery: float = None, dist_to_nearest_charger: Dict[int, float] = None,
-                        route_depot: int = None) -> Dict[str, float]:
+                        route_depot: int = None, bool_capacity: bool = True) -> Dict[str, float]:
         """
         Extract features for a given candidate request.
         
@@ -507,6 +522,7 @@ class VRPFeatureExtractor:
             current_battery: Current battery level (for GVRP)
             dist_to_nearest_charger: Dictionary mapping node -> distance to nearest charger (for GVRP)
             route_depot: Depot of the current route (for multi-depot). If None, uses instance.depot.
+            bool_capacity: If False, capacity-related features are zeroed out.
         
         Returns:
             Dictionary of feature values
@@ -518,20 +534,43 @@ class VRPFeatureExtractor:
         dist_from_current = float(self.dist_matrix[current_position, request])
         features['dist_to_depot'] = float(self.dist_matrix[depot, request])
         features['dist_from_current'] = dist_from_current
-        features['travel_distance'] = dist_from_current
         
-        # Demand and capacity features
-        features['demand'] = float(self.demands[request])
-        features['remaining_capacity'] = float(self.capacity - current_load)
-        features['load_percentage'] = current_load / self.capacity
-        
-        # Savings-like features (use route depot)
+        # Savings-like features
         features['savings'] = (
             float(self.dist_matrix[depot, current_position]) +
             float(self.dist_matrix[request, depot]) -
             float(self.dist_matrix[current_position, request])
         )
-        
+
+        # Demand and capacity features
+        if bool_capacity:
+            features['demand'] = float(self.demands[request])
+            features['remaining_capacity'] = float(self.capacity - current_load)
+            if self.capacity > 0:
+                features['load_percentage'] = current_load / self.capacity
+            else:
+                features['load_percentage'] = 0.0
+
+
+        # Depot-specific features
+        # depot_relative_workload will be set in solve_with_scoring based on route counts
+        # Distance-based advantage and rank of this depot for this customer
+        if len(self.depots) > 1:
+            features['depot_relative_workload'] = 0.0
+            d_this = float(self.dist_matrix[depot, request])
+            depot_dists = [float(self.dist_matrix[d, request]) for d in self.depots]
+            sorted_dists = sorted(depot_dists)
+            # Rank: 1 = closest depot
+            rank = sorted_dists.index(d_this) + 1 if d_this in sorted_dists else len(self.depots)
+            features['depot_rank'] = float(rank)
+            # Advantage: how much closer this depot is vs second-best
+            if len(sorted_dists) > 1:
+                second_best = sorted_dists[1]
+                features['depot_distance_advantage'] = max(0.0, second_best - d_this)
+            else:
+                features['depot_distance_advantage'] = 0.0
+                
+
         # Time-window-aware features (if available)
         if self.has_tw:
             travel = float(self.dist_matrix[current_position, request])
@@ -539,12 +578,12 @@ class VRPFeatureExtractor:
             ready = float(self.ready_times[request])
             due = float(self.due_dates[request])
             wait_time = max(0.0, ready - arrival)
-            tw_feasible = 1.0 if arrival <= due else 0.0
             slack_to_due = max(0.0, due - arrival)
 
-            #features['arrival_time'] = arrival
-            #features['due_time'] = due
-            #features['tw_feasible'] = tw_feasible
+            features['current_time'] = float(current_time)
+            features['arrival_time'] = arrival
+            features['ready_time'] = ready
+            features['due_time'] = due
             features['wait_time'] = wait_time
             features['slack_to_due'] = slack_to_due
             d_safe = max(dist_from_current, 1e-6)
@@ -560,21 +599,11 @@ class VRPFeatureExtractor:
             dist_to_customer = float(self.dist_matrix[current_position, request])
             energy_to_customer = dist_to_customer * self.energy_consumption
             features['energy_to_customer'] = energy_to_customer
-            
-            # Feasibility indicator
-            #features['is_directly_reachable'] = 1.0 if current_battery >= energy_to_customer else 0.0
-            
+
             # Distance to nearest charging station
             if dist_to_nearest_charger is not None and request in dist_to_nearest_charger:
                 features['dist_to_nearest_charger'] = dist_to_nearest_charger[request]
-                
-                # Safety margin: battery remaining after reaching customer minus energy to nearest charger
-                battery_after_customer = current_battery - energy_to_customer
-                safety_energy = dist_to_nearest_charger[request] * self.energy_consumption
-                safety_margin = battery_after_customer - safety_energy
-                features['battery_safety_margin'] = safety_margin
             else:
                 features['dist_to_nearest_charger'] = 0.0
-                features['battery_safety_margin'] = 0.0
     
         return features

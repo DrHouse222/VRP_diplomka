@@ -70,8 +70,8 @@ def run_genetic_programming(
     generations: int = 50,
     time_limit_sec: float | None = None,
     seed: int | None = None,
-    cxpb: float = 0.8,
-    mutpb: float = 0.15,
+    cxpb: float = 1.0,
+    mutpb: float = 0.2,
 ):
     """Run genetic programming to evolve VRP scoring function."""
     
@@ -507,10 +507,10 @@ def load_instances_by_type():
 
 def main():
     # Choose variants
-    bool_capacity = True
-    bool_TW = False
-    bool_green = True
-    bool_MD = True
+    bool_capacity = 1
+    bool_TW = 1
+    bool_green = 1
+    bool_MD = 1
 
     # Load instances
     cvrp_instances, vrptw_instances, gvrp_instances, mdvrp_instances, mdvrptw_instances = load_instances_by_type()
@@ -537,10 +537,12 @@ def main():
             all_instances=instances,
             problem_type=problem_type,
             bool_capacity=bool_capacity,
-            n_train=1,
-            n_test=0,
-            population_size=100,
+            n_train=5,
+            n_test=-1,
+            population_size=10,
             generations=10
+            cxpb=1.0,
+            mutpb=0.2
         )
     else:
         print(f"No instances loaded for {problem_type}")

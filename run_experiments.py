@@ -180,6 +180,7 @@ def run_all_experiments(
 
                         record = {
                             "problem_type": problem_type,
+                            "bool_capacity": bool_capacity,
                             "n_train": n_train,
                             "n_test": n_test,
                             "population_size": population_size,
@@ -203,10 +204,12 @@ if __name__ == "__main__":
     # Example: run quick experiments with a time budget per variant
     run_all_experiments(
         output_path="experiment_results.jsonl",
-        population_size=50,
+        population_size=100,
         generations=50,
-        time_limit_sec=None,  # e.g. set to 300 for 5-minute budget per variant
+        time_limit_sec=60,  # e.g. set to 300 for 5-minute budget per variant
         n_train=5,
         n_test=-1,
+        cxpb=1.0,
+        mutpb=0.2
     )
 
