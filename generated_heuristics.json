@@ -1,0 +1,386 @@
+[
+  {
+    "variant_name": "CVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "min(protected_div(dist_from_current, max(dist_to_depot, 1.0)), savings)"
+  },
+  {
+    "variant_name": "CVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "add(dist_from_current, protected_div(savings, max(dist_to_depot, 1.0)))"
+  },
+  {
+    "variant_name": "CVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(dist_from_current, savings), protected_div(dist_to_depot, max(dist_from_current, 1.0)))"
+  },
+  {
+    "variant_name": "MDCVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "add(min(dist_from_current, savings), protected_div(max(1.0, depot_distance_advantage), max(1.0, depot_rank)))"
+  },
+  {
+    "variant_name": "MDCVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "min(savings, protected_div(min(dist_to_depot, dist_from_current), max(depot_rank, depot_distance_advantage)))"
+  },
+  {
+    "variant_name": "MDCVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "min(dist_from_current, protected_div(savings, max(depot_distance_advantage, 0.0001)))"
+  },
+  {
+    "variant_name": "GVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "min(add(dist_to_depot, dist_from_current), protected_div(savings, max(energy_to_customer, 0.1)))"
+  },
+  {
+    "variant_name": "GVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "min(add(protected_div(dist_from_current, max(1.0, energy_to_customer)), protected_div(dist_to_depot, max(1.0, dist_from_current))), max(0.0, sub(1.0, battery_percentage)))"
+  },
+  {
+    "variant_name": "GVRP",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "min(protected_div(dist_from_current, max(energy_to_customer, 0.1)), max(0.0, sub(1.0, battery_percentage)))"
+  },
+  {
+    "variant_name": "GVRP-MD",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "min(add(protected_div(dist_from_current, dist_to_depot), max(0.0, sub(battery_percentage, energy_to_customer))), protected_div(depot_distance_advantage, dist_to_nearest_charger))"
+  },
+  {
+    "variant_name": "GVRP-MD",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "def score(dist_to_depot, dist_from_current, savings, depot_rank, depot_distance_advantage, current_battery, battery_percentage, energy_to_customer, dist_to_nearest_charger): return add(protected_div(dist_from_current, dist_to_depot), max(savings, protected_div(energy_to_customer, battery_percentage)))"
+  },
+  {
+    "variant_name": "GVRP-MD",
+    "bool_capacity": false,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "def score(dist_to_depot, dist_from_current, savings, depot_rank, depot_distance_advantage, current_battery, battery_percentage, energy_to_customer, dist_to_nearest_charger): return add(mul(savings, -1.0), protected_div(dist_from_current, max(dist_to_depot, 0.0001)))"
+  },
+  {
+    "variant_name": "VRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "def scoring_function(dist_to_depot, dist_from_current, savings, arrival_time, due_time, wait_time, slack_to_due, route_urgency): return protected_div(add(savings, protected_div(slack_to_due, max(dist_from_current, 1.0))), max(add(dist_to_depot, dist_from_current), 1.0))"
+  },
+  {
+    "variant_name": "VRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "def scoring_function(dist_to_depot, dist_from_current, savings, arrival_time, due_time, wait_time, slack_to_due, route_urgency): return min(max(add(savings, protected_div(sub(slack_to_due, wait_time), dist_from_current)), 0.0), 1.0)"
+  },
+  {
+    "variant_name": "VRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(dist_from_current, protected_div(slack_to_due, max(arrival_time, 1.0))), protected_div(wait_time, max(slack_to_due, 1.0)))"
+  },
+  {
+    "variant_name": "MDVRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "add(mul(depot_rank, protected_div(dist_from_current, max(1.0, slack_to_due))), protected_div(wait_time, max(1.0, arrival_time)))"
+  },
+  {
+    "variant_name": "MDVRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "min(max(0.0, add(protected_div(slack_to_due, dist_from_current), mul(-1.0, depot_distance_advantage))), max(0.0, protected_div(wait_time, arrival_time)))"
+  },
+  {
+    "variant_name": "MDVRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "add(min(depot_rank, protected_div(slack_to_due, max(dist_from_current, 1.0))), max(protected_div(dist_from_current, dist_to_depot), protected_div(wait_time, max(arrival_time, 1.0))))"
+  },
+  {
+    "variant_name": "G-VRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(dist_from_current, protected_div(slack_to_due, dist_to_depot)), mul(wait_time, protected_div(energy_to_customer, battery_percentage)))"
+  },
+  {
+    "variant_name": "G-VRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "protected_div(1.0, max(0.1, add(slack_to_due, wait_time)))"
+  },
+  {
+    "variant_name": "G-VRPTW",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "add(min(max(slack_to_due, 0.0), 1.0), protected_div(energy_to_customer, max(current_battery, 1.0)))"
+  },
+  {
+    "variant_name": "G-VRPTW-MD",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "add(mul(protected_div(dist_from_current, max(1.0, depot_distance_advantage)), route_urgency), mul(protected_div(wait_time, max(1.0, slack_to_due)), protected_div(energy_to_customer, max(1.0, current_battery))))"
+  },
+  {
+    "variant_name": "G-VRPTW-MD",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "add(add(add(mul(protected_div(1.0, max(1.0, depot_distance_advantage)), mul(depot_rank, dist_to_depot)), mul(slack_to_due, wait_time)), mul(arrival_time, due_time)), mul(protected_div(1.0, max(1.0, battery_percentage)), protected_div(energy_to_customer, dist_from_current)))"
+  },
+  {
+    "variant_name": "G-VRPTW-MD",
+    "bool_capacity": false,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": ""
+  },
+  {
+    "variant_name": "CVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "protected_div(max(0.0, sub(remaining_capacity, demand)), max(0.0, add(load_percentage, protected_div(demand, remaining_capacity))))"
+  },
+  {
+    "variant_name": "CVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "protected_div(load_percentage, max(1.0, demand))"
+  },
+  {
+    "variant_name": "CVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(protected_div(dist_from_current, dist_to_depot), remaining_capacity), protected_div(savings, max(1.0, load_percentage)))"
+  },
+  {
+    "variant_name": "MDCVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "add(min(protected_div(remaining_capacity, demand), load_percentage), protected_div(max(0.0, sub(dist_from_current, dist_to_depot)), max(1.0, depot_distance_advantage)))"
+  },
+  {
+    "variant_name": "MDCVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "min(add(protected_div(dist_from_current, max(1.0, remaining_capacity)), mul(-1.0, depot_distance_advantage)), max(0.0, sub(1.0, load_percentage)))"
+  },
+  {
+    "variant_name": "MDCVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "min(max(protected_div(savings, remaining_capacity), protected_div(dist_from_current, max(load_percentage, 0.1))), protected_div(depot_distance_advantage, max(depot_rank, 1.0)))"
+  },
+  {
+    "variant_name": "GVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "def score(dist_to_depot, dist_from_current, savings, demand, remaining_capacity, load_percentage, current_battery, battery_percentage, energy_to_customer, dist_to_nearest_charger): return add(savings, protected_div(add(dist_from_current, demand), protected_div(max(remaining_capacity, 1.0), min(battery_percentage, 1.0))))"
+  },
+  {
+    "variant_name": "GVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(protected_div(dist_from_current, dist_to_depot), demand), mul(protected_div(energy_to_customer, remaining_capacity), dist_to_nearest_charger))"
+  },
+  {
+    "variant_name": "GVRP",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "min(max(protected_div(energy_to_customer, max(remaining_capacity, 1.0)), protected_div(dist_to_nearest_charger, max(battery_percentage, 0.1))), max(protected_div(dist_from_current, max(load_percentage, 0.1)), protected_div(dist_to_depot, max(demand, 1.0))))"
+  },
+  {
+    "variant_name": "GVRP-MD",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "add(add(add(mul(protected_div(dist_from_current, dist_to_depot), savings), mul(protected_div(demand, remaining_capacity), depot_rank)), mul(protected_div(energy_to_customer, current_battery), dist_to_nearest_charger)), mul(load_percentage, battery_percentage))"
+  },
+  {
+    "variant_name": "GVRP-MD",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "add(mul(savings, min(1.0, protected_div(remaining_capacity, demand))), mul(depot_rank, protected_div(dist_from_current, max(1.0, dist_to_depot))))"
+  },
+  {
+    "variant_name": "GVRP-MD",
+    "bool_capacity": true,
+    "bool_TW": false,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "protected_div(add(mul(1.0, demand), mul(0.5, dist_from_current)), max(1.0, protected_div(remaining_capacity, load_percentage)))"
+  },
+  {
+    "variant_name": "VRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(demand, protected_div(dist_from_current, remaining_capacity)), protected_div(sub(due_time, arrival_time), max(1.0, wait_time)))"
+  },
+  {
+    "variant_name": "VRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "min(add(protected_div(dist_from_current, max(1.0, remaining_capacity)), max(0.0, sub(due_time, arrival_time))), add(mul(load_percentage, protected_div(slack_to_due, max(1.0, dist_from_current))), protected_div(wait_time, max(1.0, savings))))"
+  },
+  {
+    "variant_name": "VRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": false,
+    "heuristic_code": "def score_function(dist_to_depot, dist_from_current, savings, demand, remaining_capacity, load_percentage, arrival_time, due_time, wait_time, slack_to_due, route_urgency): return add(savings, protected_div(sub(demand, remaining_capacity), max(add(load_percentage, protected_div(slack_to_due, dist_from_current)), 0.0001)))"
+  },
+  {
+    "variant_name": "MDVRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "def scoring_function(dist_to_depot, dist_from_current, savings, demand, remaining_capacity, load_percentage, depot_rank, depot_distance_advantage, arrival_time, due_time, wait_time, slack_to_due, route_urgency): return add(mul(min(demand, protected_div(remaining_capacity, demand)), max(savings, depot_rank)), protected_div(slack_to_due, add(dist_from_current, dist_to_depot)))"
+  },
+  {
+    "variant_name": "MDVRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "def scoring_function(dist_to_depot, dist_from_current, savings, demand, remaining_capacity, load_percentage, depot_rank, depot_distance_advantage, arrival_time, due_time, wait_time, slack_to_due, route_urgency): return add(mul(savings, 1.0), mul(protected_div(demand, max(remaining_capacity, 0.001)), 10.0))"
+  },
+  {
+    "variant_name": "MDVRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": false,
+    "bool_MD": true,
+    "heuristic_code": "add(mul(protected_div(demand, remaining_capacity), max(1.0, protected_div(demand, load_percentage))), protected_div(slack_to_due, max(1.0, dist_from_current)))"
+  },
+  {
+    "variant_name": "G-VRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(dist_from_current, demand), protected_div(sub(remaining_capacity, load_percentage), protected_div(arrival_time, due_time)))"
+  },
+  {
+    "variant_name": "G-VRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "add(savings, protected_div(sub(dist_from_current, travel_time), protected_div(dist_to_depot, dist_from_current)))"
+  },
+  {
+    "variant_name": "G-VRPTW",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": false,
+    "heuristic_code": "add(mul(protected_div(remaining_capacity, demand), max(0.0, sub(due_time, arrival_time))), mul(protected_div(battery_percentage, energy_to_customer), min(1.0, protected_div(slack_to_due, dist_from_current))))"
+  },
+  {
+    "variant_name": "G-VRPTW-MD",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "add(mul(protected_div(remaining_capacity, demand), mul(load_percentage, protected_div(dist_to_depot, dist_from_current))), mul(min(slack_to_due, wait_time), mul(protected_div(battery_percentage, energy_to_customer), mul(depot_rank, protected_div(dist_to_nearest_charger, arrival_time)))))"
+  },
+  {
+    "variant_name": "G-VRPTW-MD",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "add(protected_div(add(dist_from_current, dist_to_depot), min(remaining_capacity, max(1.0, load_percentage))), protected_div(sub(due_time, arrival_time), max(1.0, wait_time)))"
+  },
+  {
+    "variant_name": "G-VRPTW-MD",
+    "bool_capacity": true,
+    "bool_TW": true,
+    "bool_green": true,
+    "bool_MD": true,
+    "heuristic_code": "add(mul(load_percentage, sub(dist_to_depot, savings)), protected_div(sub(slack_to_due, wait_time), max(1.0, remaining_capacity)))"
+  }
+]

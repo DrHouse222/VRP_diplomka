@@ -5,6 +5,10 @@ https://data.mendeley.com/datasets/h3mrm5dhxw/1
 
 https://neo.lcc.uma.es/vrp/vrp-instances/description-for-files-of-cordeaus-instances/
 
+https://openrouter.ai/arcee-ai/trinity-large-preview:free/api
+
+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
+
 Two possible strategies:
     Superset model — use one GP model trained on a superset of features (all variants). Variant-specific features are masked/filled with safe defaults when not present. Add a variant indicator feature. => easier deployment, generalization across variants.
     Per-variant models — maintain a separate GP (pset, training) per VRP variant. => potentially better specialized performance, slightly more management overhead.

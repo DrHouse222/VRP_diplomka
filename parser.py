@@ -534,7 +534,7 @@ class VRPFeatureExtractor:
         dist_from_current = float(self.dist_matrix[current_position, request])
         features['dist_to_depot'] = float(self.dist_matrix[depot, request])
         features['dist_from_current'] = dist_from_current
-        
+
         # Savings-like features
         features['savings'] = (
             float(self.dist_matrix[depot, current_position]) +
@@ -551,12 +551,10 @@ class VRPFeatureExtractor:
             else:
                 features['load_percentage'] = 0.0
 
-
         # Depot-specific features
         # depot_relative_workload will be set in solve_with_scoring based on route counts
         # Distance-based advantage and rank of this depot for this customer
         if len(self.depots) > 1:
-            features['depot_relative_workload'] = 0.0
             d_this = float(self.dist_matrix[depot, request])
             depot_dists = [float(self.dist_matrix[d, request]) for d in self.depots]
             sorted_dists = sorted(depot_dists)
@@ -569,7 +567,6 @@ class VRPFeatureExtractor:
                 features['depot_distance_advantage'] = max(0.0, second_best - d_this)
             else:
                 features['depot_distance_advantage'] = 0.0
-                
 
         # Time-window-aware features (if available)
         if self.has_tw:

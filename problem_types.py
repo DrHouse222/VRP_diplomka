@@ -36,7 +36,7 @@ class VRPProblemType:
         
         # GVRP battery features (only for GVRP)
         self.gvrp_feature_names = [
-            'current_battery', 'energy_to_customer', 'is_directly_reachable',
+            'current_battery', 'battery_percentage', 'energy_to_customer', 'is_directly_reachable',
             'dist_to_nearest_charger', 'battery_safety_margin'
         ]
     

@@ -6,7 +6,7 @@ Genetic Programming solution for VRP variants using DEAP framework.
 import numpy as np
 from deap import base, creator, tools, gp, algorithms
 from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor, CordeauMDVRPInstance
-from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic
+from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic, saving_heuristic2
 from problem_types import VRP_PROBLEM_TYPE
 from data_generation import convert_vrptw_to_gvrptw, remove_tw_from_gvrp, evrptw_to_multi_depot
 import time
@@ -14,11 +14,11 @@ import copy
 import matplotlib.pyplot as plt
 import glob
 import os
-
+import operator
 
 def create_individual(pset):
     """Create a GP individual."""
-    return gp.PrimitiveTree(gp.genHalfAndHalf(pset, min_=1, max_=3))
+    return gp.PrimitiveTree(gp.genHalfAndHalf(pset, min_=2, max_=6))
 
 
 def create_toolbox():
@@ -90,10 +90,14 @@ def run_genetic_programming(
     
     # Register evaluation function
     toolbox.register("evaluate", evaluate_with_problem_type)
-    toolbox.register("select", tools.selTournament, tournsize=3)
+    toolbox.register("select", tools.selTournament, tournsize=3) #maybe change to 5
     toolbox.register("mate", gp.cxOnePoint)
-    toolbox.register("expr_mut", gp.genHalfAndHalf, min_=0, max_=2)
+    toolbox.register("expr_mut", gp.genHalfAndHalf, min_=0, max_=3)
     toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
+
+    toolbox.decorate("mate", gp.staticLimit(key=operator.attrgetter("height"), max_value=10))
+    toolbox.decorate("mutate", gp.staticLimit(key=operator.attrgetter("height"), max_value=10))
+
     
     # Statistics
     stats_fit = tools.Statistics(lambda ind: ind.fitness.values)
@@ -259,8 +263,11 @@ def train_and_test_problem_type(
             nn_routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_capacity)
             nn_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, nn_routes)
 
-            s_routes = saving_heuristic(instance, bool_capacity=bool_capacity)
-            s_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, s_routes)
+            #s_routes = saving_heuristic(instance, bool_capacity=bool_capacity)
+            s_routes2 = saving_heuristic2(instance, bool_capacity=bool_capacity)
+
+            s_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, s_routes2)
+            #s_fitness2 = VRP_PROBLEM_TYPE.compute_cost(instance, s_routes2)
             
             # Calculate Improvement
             if nn_fitness > 0:
@@ -279,6 +286,7 @@ def train_and_test_problem_type(
             print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
             print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
             print(f"  Saving Heuristic : Fitness = {s_fitness:.2f}")
+            #print(f"  Saving Heuristic2: Fitness = {s_fitness2:.2f}")
             print(f"  Improvement over NN (fitness): {impNN:.2f}%")
             print(f"  Improvement over Saving (fitness): {impS:.2f}%")
             print(f"  Time taken: {elapsed:.2f} seconds")
@@ -451,15 +459,27 @@ def load_instances_by_type():
             print(f"Warning: Failed to load {filepath}: {e}")
     
     vrptw_instances = []
-    # Load first 30 .txt files from Sets/Vrp-Set-HG
+    # Load .txt files from Sets/Vrp-Set-HG
     def natural_sort_key(filename):
         """Natural sort key that handles numbers in filenames."""
         import re
         return [int(text) if text.isdigit() else text.lower() 
                 for text in re.split(r'(\d+)', os.path.basename(filename))]
-    txt_files = sorted(glob.glob("Sets/Vrp-Set-HG/*.txt"), key=natural_sort_key)[:30]
-    del txt_files[25]
-    for filepath in txt_files:
+    txt_files = sorted(glob.glob("Sets/Vrp-Set-HG/*.txt"), key=natural_sort_key)
+
+    # Ensure these three are first if present
+    preferred_vrptw = ["C1_2_1.txt", "R1_2_1.txt", "RC1_2_1.txt"]
+    ordered_txt_files = []
+    remaining_txt_files = list(txt_files)
+    for name in preferred_vrptw:
+        for f in list(remaining_txt_files):
+            if os.path.basename(f) == name:
+                ordered_txt_files.append(f)
+                remaining_txt_files.remove(f)
+                break
+    ordered_txt_files.extend(remaining_txt_files)
+
+    for filepath in ordered_txt_files:
         try:
             vrptw_instances.append(VRPTWInstance(filepath))
         except Exception as e:
@@ -475,7 +495,20 @@ def load_instances_by_type():
             if not os.path.basename(f) in ["readme.txt"]
         ]
     )
-    for filepath in evrptw_files:
+
+    # Ensure these three are first if present
+    preferred_gvrp = ["c101_21.txt", "r101_21.txt", "rc101_21.txt"]
+    ordered_evrptw_files = []
+    remaining_evrptw = list(evrptw_files)
+    for name in preferred_gvrp:
+        for f in list(remaining_evrptw):
+            if os.path.basename(f) == name:
+                ordered_evrptw_files.append(f)
+                remaining_evrptw.remove(f)
+                break
+    ordered_evrptw_files.extend(remaining_evrptw)
+
+    for filepath in ordered_evrptw_files:
         try:
             gvrp_instances.append(GVRPMultiTechInstance(filepath))
         except Exception as e:
@@ -508,9 +541,9 @@ def load_instances_by_type():
 def main():
     # Choose variants
     bool_capacity = 1
-    bool_TW = 1
+    bool_TW = 0
     bool_green = 1
-    bool_MD = 1
+    bool_MD = 0
 
     # Load instances
     cvrp_instances, vrptw_instances, gvrp_instances, mdvrp_instances, mdvrptw_instances = load_instances_by_type()
@@ -539,8 +572,8 @@ def main():
             bool_capacity=bool_capacity,
             n_train=5,
             n_test=-1,
-            population_size=10,
-            generations=10
+            population_size=1,
+            generations=1,
             cxpb=1.0,
             mutpb=0.2
         )
