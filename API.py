@@ -14,7 +14,9 @@ FEATURE_DESCRIPTIONS: Dict[str, str] = {
     "remaining_capacity": "remaining vehicle capacity before adding candidate",
     "load_percentage": "current load divided by vehicle capacity",
     # Time-related features
+    "current_time": "current time in route construction",
     "arrival_time": "arrival time at candidate if selected next",
+    "ready_time": "earliest allowed service start time at candidate",
     "due_time": "latest allowed service start time at candidate",
     "wait_time": "waiting time before service can start at candidate",
     "slack_to_due": "time left until due time at arrival",
@@ -111,7 +113,9 @@ def get_features_for_variant(
         features.append('depot_rank')
         features.append('depot_distance_advantage')
     if bool_TW:
+        features.append('current_time')
         features.append('arrival_time')
+        features.append('ready_time')
         features.append('due_time')
         features.append('wait_time')
         features.append('slack_to_due')
@@ -185,7 +189,7 @@ def generate_all_vrp_heuristics(api_key: str) -> List[Dict[str, Any]]:
                     )
 
 
-                    for i in range(20):
+                    for i in range(30):
                         code = generate_vrp_heuristic(features_str, variant_description, api_key)
 
                         results.append(
@@ -202,5 +206,5 @@ def generate_all_vrp_heuristics(api_key: str) -> List[Dict[str, Any]]:
     return results
 
 results = generate_all_vrp_heuristics(api_key="")
-with open("generated_heuristics2.json", "w", encoding="utf-8") as f:
+with open("generated_heuristics.json", "w", encoding="utf-8") as f:
     json.dump(results, f, indent=2)

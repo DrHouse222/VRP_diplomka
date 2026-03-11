@@ -543,7 +543,7 @@ def main():
     bool_capacity = 1
     bool_TW = 0
     bool_green = 1
-    bool_MD = 0
+    bool_MD = 1
 
     # Load instances
     cvrp_instances, vrptw_instances, gvrp_instances, mdvrp_instances, mdvrptw_instances = load_instances_by_type()
@@ -571,7 +571,7 @@ def main():
             problem_type=problem_type,
             bool_capacity=bool_capacity,
             n_train=5,
-            n_test=-1,
+            n_test=0,
             population_size=1,
             generations=1,
             cxpb=1.0,
@@ -593,7 +593,7 @@ def main():
         
         # Plot all routes for the first instance
         if instances:
-            instance = instances[0]
+            instance = instances[3]
             feature_extractor = VRPFeatureExtractor(instance)
             func = gp.compile(expr=vrp_best, pset=vrp_pset)
             gp_solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)

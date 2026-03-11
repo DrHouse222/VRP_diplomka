@@ -136,7 +136,7 @@ def remove_tw_from_gvrp(gvrp_instances):
 
 def evrptw_to_multi_depot(
     instance: Any,
-    num_depots: int = 5,
+    num_depots: int | None = None,
 ) -> Any:
     """
     Convert a single-depot EVRPTW instance to a multi-depot instance.
@@ -153,8 +153,12 @@ def evrptw_to_multi_depot(
     instance : EVRPTW-like instance or list of such instances
         If a list, each instance is copied and converted; returns list of new instances.
         Otherwise the instance is copied and the copy is converted and returned.
-    num_depots : int
-        Total number of depots (default 2). Must be at least 2.
+    num_depots : int or None
+        If None, the number of depots is chosen dynamically based on the number
+        of customers in the instance:
+            - minimum 2 depots, maximum 5 depots
+            - mapping is based on customer count in [5, 100]
+        If an int is provided, it is used directly (still clipped to [2, 5]).
 
     Returns
     -------
@@ -164,6 +168,36 @@ def evrptw_to_multi_depot(
         return [evrptw_to_multi_depot(inst, num_depots=num_depots) for inst in instance]
     # Work on a copy so the original is not modified
     instance = copy.deepcopy(instance)
+
+    # Determine number of customers
+    n_all = getattr(instance, "dimension", None)
+    if n_all is None and hasattr(instance, "demands"):
+        n_all = len(instance.demands)
+    node_types = getattr(instance, "node_types", None)
+    if node_types is not None:
+        # By convention, node_type == 1 are customers
+        n_customers = int(sum(1 for t in node_types if t == 1))
+    else:
+        # Fallback: treat all non-depot nodes as customers
+        depot_idx = getattr(instance, "depot", 0)
+        n_customers = max(0, (n_all or 0) - 1) if n_all is not None else 0
+
+    if num_depots is None:
+        # Clamp customer count to [5, 100] for the mapping
+        c = max(5, min(100, n_customers))
+        # Simple piecewise mapping from customers -> depots
+        if c <= 20:
+            num_depots = 2
+        elif c <= 40:
+            num_depots = 3
+        elif c <= 70:
+            num_depots = 4
+        else:
+            num_depots = 5
+
+    # Ensure depots are within requested [2, 5] range
+    num_depots = max(2, min(5, int(num_depots)))
+
     if num_depots < 2:
         setattr(instance, "depots", [getattr(instance, "depot", 0)])
         return instance
