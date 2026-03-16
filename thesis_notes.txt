@@ -1,10 +1,6 @@
 using VRPLIB for parsing
 vrplib does support Solomon format with the instance_format="solomon" parameter. T
 
-https://data.mendeley.com/datasets/h3mrm5dhxw/1
-
-https://neo.lcc.uma.es/vrp/vrp-instances/description-for-files-of-cordeaus-instances/
-
 https://openrouter.ai/arcee-ai/trinity-large-preview:free/api
 
 
@@ -15,16 +11,7 @@ Two possible strategies:
 using hard time windows
 hard capacity viol
 could do fitness and construction in two types 1: construct whatever, fitness penalizes 2: construct only correct, fitness only distance
-cloning 20% and turning into charging stations
+
 first evaluate feasibility then select and the other way, capacity check first
-
-
-evrptw_to_multi_depot(instance, num_depots=2) in data_generation.py
-Behavior: Converts a single-depot EVRPTW instance to multi-depot by changing the instance in place and returning it.
-Depot layout: The original depot stays at index 0. Extra depots are added at the end of the node list. Their positions are fixed (no randomness):
-Bounding box of all nodes is computed.
-Centroid (cx, cy) and radius 0.4 * max(range_x, range_y) are computed.
-The num_depots - 1 new depots are placed on the circle around the centroid at angles 2π * k / (num_depots - 1) for k = 0, 1, ....
-
 
 using serial because in this: Evolving_routing_policies_for_electric_vehicles_by.pdf it got the best results

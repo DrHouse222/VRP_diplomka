@@ -115,7 +115,7 @@ def main(max_instances_per_variant=None):
     max_instances_per_variant: if set (e.g. 3), only use that many instances per
     variant for a quicker run. None = use all instances.
     """
-    json_path = os.path.join(os.path.dirname(__file__), "generated_heuristics2.json")
+    json_path = os.path.join(os.path.dirname(__file__), "generated_heuristics.json")
     with open(json_path, "r", encoding="utf-8") as f:
         heuristics = json.load(f)
 

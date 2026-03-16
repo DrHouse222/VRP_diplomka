@@ -133,6 +133,7 @@ def run_all_experiments(
                             all_instances=instances,
                             problem_type=problem_type,
                             bool_capacity=bool_capacity,
+                            bool_green=bool_green,
                             n_train=n_train,
                             n_test=n_test,
                             population_size=population_size,
@@ -155,26 +156,47 @@ def run_all_experiments(
                             else None
                         )
 
-                        # Extract terminals used in the best individual
-                        used_terminals = sorted(
-                            {str(node) for node in best_individual if isinstance(node, gp.Terminal)}
-                        )
+                        # Serialize logbook (fitness/size evolution).
+                        # DEAP's MultiStatistics stores per-chapter data in
+                        # logbook.chapters['fitness'] and ['size'], while logbook
+                        # entries themselves only contain gen / nevals.
+                        log_evolution: List[Dict[str, Any]] = []
+                        fitness_chapter = getattr(logbook, "chapters", {}).get("fitness")
+                        size_chapter = getattr(logbook, "chapters", {}).get("size")
 
-                        # Serialize logbook (fitness/size evolution)
-                        def _serialize_log_entry(entry: Any) -> Dict[str, Any]:
-                            d: Dict[str, Any] = dict(entry)
-                            for k, v in list(d.items()):
-                                # Convert numpy scalars to Python scalars
+                        for i, rec in enumerate(logbook):
+                            base: Dict[str, Any] = {}
+                            for k, v in dict(rec).items():
                                 try:
                                     if hasattr(v, "item"):
-                                        d[k] = v.item()
+                                        v = v.item()
                                 except Exception:
                                     pass
-                            return d
+                                base[k] = v
 
-                        log_evolution: List[Dict[str, Any]] = [
-                            _serialize_log_entry(rec) for rec in logbook
-                        ]
+                            # Attach fitness stats for this generation, if present
+                            if fitness_chapter is not None and i < len(fitness_chapter):
+                                fit_stats = fitness_chapter[i]
+                                for stat_name, v in dict(fit_stats).items():
+                                    try:
+                                        if hasattr(v, "item"):
+                                            v = v.item()
+                                    except Exception:
+                                        pass
+                                    base[f"fitness_{stat_name}"] = v
+
+                            # Attach size stats for this generation, if present
+                            if size_chapter is not None and i < len(size_chapter):
+                                sz_stats = size_chapter[i]
+                                for stat_name, v in dict(sz_stats).items():
+                                    try:
+                                        if hasattr(v, "item"):
+                                            v = v.item()
+                                    except Exception:
+                                        pass
+                                    base[f"size_{stat_name}"] = v
+
+                            log_evolution.append(base)
 
                         last_gen = log_evolution[-1]["gen"] if log_evolution else None
 
@@ -193,7 +215,6 @@ def run_all_experiments(
                             "mutpb": mutpb,
                             "best_expr": best_expr,
                             "best_fitness": best_fitness,
-                            "terminals_used": used_terminals,
                             "log_evolution": log_evolution,
                         }
                         f_out.write(json.dumps(record) + "\n")
@@ -204,9 +225,9 @@ if __name__ == "__main__":
     # Example: run quick experiments with a time budget per variant
     run_all_experiments(
         output_path="experiment_results.jsonl",
-        population_size=100,
-        generations=50,
-        time_limit_sec=60,  # e.g. set to 300 for 5-minute budget per variant
+        population_size=200,
+        generations=10000,
+        time_limit_sec=3000,  # e.g. set to 300 for 5-minute budget per variant
         n_train=5,
         n_test=-1,
         cxpb=1.0,

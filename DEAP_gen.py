@@ -40,7 +40,7 @@ def create_toolbox():
     return toolbox, pset
 
 
-def evaluate_individual(individual, instances, bool_capacity=True):
+def evaluate_individual(individual, instances, bool_capacity=True, bool_green=True):
     """Evaluate a GP individual on VRP instances."""
     # Compile the individual
     func = gp.compile(expr=individual, pset=VRP_PROBLEM_TYPE.create_primitive_set(gp))
@@ -51,7 +51,10 @@ def evaluate_individual(individual, instances, bool_capacity=True):
         feature_extractor = VRPFeatureExtractor(instance)
         
         # Solve using the GP function
-        solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
+        if (bool_green):
+            solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
+        else:
+            solution = VRP_PROBLEM_TYPE.solve_with_scoring_without_green(instance, feature_extractor, func, bool_capacity)
         fitness = VRP_PROBLEM_TYPE.compute_cost(instance, solution)
         total_fitness += fitness
     
@@ -72,6 +75,7 @@ def run_genetic_programming(
     seed: int | None = None,
     cxpb: float = 1.0,
     mutpb: float = 0.2,
+    bool_green: bool = True,
 ):
     """Run genetic programming to evolve VRP scoring function."""
     
@@ -86,7 +90,7 @@ def run_genetic_programming(
     
     # Create evaluation function
     def evaluate_with_problem_type(individual):
-        return evaluate_individual(individual, instances, bool_capacity)
+        return evaluate_individual(individual, instances, bool_capacity, bool_green)
     
     # Register evaluation function
     toolbox.register("evaluate", evaluate_with_problem_type)
@@ -190,6 +194,7 @@ def train_and_test_problem_type(
     seed: int | None = None,
     cxpb: float = 0.8,
     mutpb: float = 0.15,
+    bool_green: bool = True,
 ):
     """
     Train on 'n_train' instances, Test on the rest.
@@ -233,6 +238,7 @@ def train_and_test_problem_type(
         seed=seed,
         cxpb=cxpb,
         mutpb=mutpb,
+        bool_green=bool_green,
     )
     
     # Get the evolved function
@@ -255,8 +261,11 @@ def train_and_test_problem_type(
             # Create feature extractor
             feature_extractor = VRPFeatureExtractor(instance)
             
-            # Solve using GP (Evolved Rule)
-            gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
+            # Solve using the GP function
+            if (bool_green):
+                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
+            else:
+                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring_without_green(instance, feature_extractor, func, bool_capacity)
             gp_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, gp_routes)
 
             # Solve using Baseline (Nearest Neighbor)
@@ -539,10 +548,11 @@ def load_instances_by_type():
 
 
 def main():
+
     # Choose variants
     bool_capacity = 1
-    bool_TW = 0
-    bool_green = 1
+    bool_TW = 1
+    bool_green = 0
     bool_MD = 1
 
     # Load instances
@@ -570,8 +580,9 @@ def main():
             all_instances=instances,
             problem_type=problem_type,
             bool_capacity=bool_capacity,
+            bool_green=bool_green,
             n_train=5,
-            n_test=0,
+            n_test=-1,
             population_size=1,
             generations=1,
             cxpb=1.0,
@@ -588,6 +599,7 @@ def main():
     elapsed_time = end_time - start_time
     print(f"Total elapsed time: {elapsed_time:.2f} seconds")
     
+    '''
     if results:
         vrp_best, vrp_logbook, vrp_pset = results
         
@@ -602,7 +614,7 @@ def main():
             if gp_solution and len(gp_solution) > 0:
                 plot_route(instance, gp_solution, title=f"{instance.name}", fitness=gp_fitness)
                 plt.show()
-
+'''
 
 if __name__ == "__main__":
     main()

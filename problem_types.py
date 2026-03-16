@@ -170,7 +170,298 @@ class VRPProblemType:
             total_distance += penalty_per_customer * len(unserved_customers)
 
         return total_distance
-    
+
+    def solve_with_scoring_without_green(self, instance, feature_extractor, scoring_func, bool_capacity=True) -> List[List[int]]:
+        """
+        Route construction with multi-depot support, but **without** any Green-VRP
+        (battery / charging-station) management.
+
+        This behaves like solve_with_scoring, except:
+          - all battery-related constraints are ignored
+          - no charging-station detours are added
+          - battery-related features are not populated
+        """
+        n = instance.dimension
+        depot = getattr(instance, "depot", 0)
+
+        # Multi-depot setup
+        depots = getattr(instance, "depots", None)
+        is_multi_depot = depots is not None and len(depots) > 1
+        depots_list = depots if is_multi_depot else [depot]
+
+        depot_route_counts = {d: 0 for d in depots_list}
+        total_routes_started = 0
+
+        if bool_capacity:
+            max_capacity = getattr(instance, "capacity", 0.0)
+        else:
+            max_capacity = float("inf")
+
+        # No battery / station management here
+        has_battery = False
+        node_types = getattr(instance, "node_types", None)
+
+        # Time window setup
+        has_tw = self.has_time_windows(instance)
+        max_travel_raw = getattr(instance, "max_travel_time", None)
+        if max_travel_raw is not None and max_travel_raw > 0 and np.isfinite(max_travel_raw):
+            has_max_travel_dist = True
+            max_travel_dist = float(max_travel_raw)
+        else:
+            has_max_travel_dist = False
+            max_travel_dist = float("inf")
+
+        # Unvisited set
+        unvisited = set(range(0, n))
+        for d in depots_list:
+            unvisited.discard(d)
+        if node_types is not None:
+            for i in range(n):
+                if node_types[i] == 2:
+                    unvisited.discard(i)
+
+        routes: List[List[int]] = []
+
+        while unvisited:
+            # Choose starting depot (for multi-depot)
+            route_start_depot = depot
+            if is_multi_depot:
+                best_pair = None
+                best_score = float("inf")
+                for candidate_depot in depots_list:
+                    for customer in unvisited:
+                        demand = instance.demands[customer]
+                        if demand > max_capacity:
+                            continue
+
+                        dist_direct = instance.dist_matrix[candidate_depot, customer]
+
+                        # Time window feasibility depot->customer->depot
+                        arrival_direct = dist_direct
+                        if has_tw:
+                            if arrival_direct > instance.due_dates[customer]:
+                                continue
+                            ready = instance.ready_times[customer]
+                            service = instance.service_times[customer]
+                            dept_time = max(arrival_direct, ready) + service
+                            dist_home = instance.dist_matrix[customer, candidate_depot]
+                            arrival_at_depot = dept_time + dist_home
+                            if arrival_at_depot > instance.due_dates[candidate_depot]:
+                                continue
+                        else:
+                            service = getattr(instance, "service_times", np.zeros(n))[customer]
+                            dist_home = instance.dist_matrix[customer, candidate_depot]
+                            arrival_at_depot = dist_direct + service + dist_home
+
+                        # Features for depot-customer pair
+                        features = feature_extractor.extract_features(
+                            request=customer,
+                            current_route=[],
+                            current_load=0.0,
+                            current_position=candidate_depot,
+                            current_time=0.0 if has_tw else 0.0,
+                            current_battery=None,
+                            dist_to_nearest_charger=None,
+                            route_depot=candidate_depot,
+                            bool_capacity=bool_capacity,
+                        )
+                        if is_multi_depot:
+                            total_started = sum(depot_route_counts.values()) or 1
+                            rel_workload = depot_route_counts.get(candidate_depot, 0) / total_started
+                        else:
+                            rel_workload = 0.0
+                        features["depot_relative_workload"] = rel_workload
+                        features["dist_from_current"] = dist_direct
+                        features["savings"] = (
+                            features.get("dist_to_depot", 0.0)
+                            + features.get("dist_to_depot_from_request", 0.0)
+                            - dist_direct
+                        )
+                        if bool_capacity:
+                            features["remaining_capacity"] = max_capacity - demand
+                        else:
+                            features["remaining_capacity"] = 0.0
+
+                        feature_values = self.extract_feature_values(features)
+                        try:
+                            score = scoring_func(*feature_values)
+                        except Exception:
+                            score = 1e6
+
+                        # Soft constraint: max travel distance for depot->cust->depot
+                        route_dist = dist_direct + instance.dist_matrix[customer, candidate_depot]
+                        if has_max_travel_dist and route_dist > max_travel_dist:
+                            score += (route_dist - max_travel_dist)
+
+                        if score < best_score:
+                            best_score = score
+                            best_pair = (candidate_depot, customer)
+
+                if best_pair is None:
+                    logging.warning(
+                        f"No feasible depot-customer pair found (no-green). {len(unvisited)} customers remain."
+                    )
+                    break
+
+                route_start_depot, first_customer = best_pair
+                depot_route_counts[route_start_depot] += 1
+                total_routes_started += 1
+            else:
+                first_customer = None
+
+            # Start new route
+            route = [route_start_depot]
+            load = 0.0
+            current_node = route_start_depot
+            current_time = 0.0
+            current_route_distance = 0.0
+
+            if is_multi_depot and first_customer is not None:
+                dist_to_cust = instance.dist_matrix[route_start_depot, first_customer]
+                route.append(first_customer)
+                load += instance.demands[first_customer]
+                unvisited.remove(first_customer)
+                current_node = first_customer
+                current_route_distance = dist_to_cust
+
+                if has_tw:
+                    arrival = current_time + dist_to_cust
+                    ready = instance.ready_times[first_customer]
+                    service = instance.service_times[first_customer]
+                    start_service = max(arrival, ready)
+                    current_time = start_service + service
+                else:
+                    current_time += dist_to_cust
+
+                customers_added_this_route = 1
+            else:
+                customers_added_this_route = 0
+
+            inner_iterations = 0
+            MAX_INNER_ITERATIONS = len(unvisited) * 2 + 1
+
+            while True:
+                inner_iterations += 1
+                if inner_iterations > MAX_INNER_ITERATIONS:
+                    logging.warning(
+                        f"Inner loop (no-green) exceeded {MAX_INNER_ITERATIONS} iterations. Breaking route."
+                    )
+                    route.append(route_start_depot)
+                    break
+
+                candidates = list(unvisited)
+                if not candidates:
+                    route.append(route_start_depot)
+                    break
+
+                feasible_candidates: List[int] = []
+                scores: List[float] = []
+
+                for customer in candidates:
+                    demand = instance.demands[customer]
+                    if load + demand > max_capacity:
+                        continue
+
+                    dist_direct = instance.dist_matrix[current_node, customer]
+                    arrival_direct = current_time + dist_direct
+
+                    # Time-window feasibility
+                    if has_tw:
+                        if arrival_direct > instance.due_dates[customer]:
+                            continue
+                        ready = instance.ready_times[customer]
+                        service = instance.service_times[customer]
+                        dept_time = max(arrival_direct, ready) + service
+                        dist_home = instance.dist_matrix[customer, route_start_depot]
+                        arrival_at_depot = dept_time + dist_home
+                        if arrival_at_depot > instance.due_dates[route_start_depot]:
+                            continue
+                        route_dist_if_added = current_route_distance + dist_direct + dist_home
+                        if has_max_travel_dist and route_dist_if_added > max_travel_dist:
+                            continue
+                    else:
+                        if has_max_travel_dist:
+                            dist_home = instance.dist_matrix[customer, route_start_depot]
+                            route_dist_if_added = current_route_distance + dist_direct + dist_home
+                            if route_dist_if_added > max_travel_dist:
+                                continue
+
+                    # Build features (no battery data)
+                    features = feature_extractor.extract_features(
+                        request=customer,
+                        current_route=route,
+                        current_load=load,
+                        current_position=current_node,
+                        current_time=current_time if has_tw else 0.0,
+                        current_battery=None,
+                        dist_to_nearest_charger=None,
+                        route_depot=route_start_depot,
+                        bool_capacity=bool_capacity,
+                    )
+                    features["dist_from_current"] = dist_direct
+                    features["savings"] = (
+                        features.get("dist_to_depot", 0.0)
+                        + features.get("dist_to_depot_from_request", 0.0)
+                        - dist_direct
+                    )
+                    if is_multi_depot:
+                        rel_workload = depot_route_counts.get(route_start_depot, 0) / max(
+                            1, total_routes_started
+                        )
+                        features["depot_relative_workload"] = rel_workload
+
+                    if bool_capacity:
+                        features["remaining_capacity"] = max_capacity - (load + demand)
+                    else:
+                        features["remaining_capacity"] = 0.0
+
+                    feature_values = self.extract_feature_values(features)
+
+                    try:
+                        score = scoring_func(*feature_values)
+                    except Exception:
+                        score = 1e6
+
+                    feasible_candidates.append(customer)
+                    scores.append(score)
+
+                if not feasible_candidates:
+                    if customers_added_this_route == 0:
+                        #logging.warning(
+                        #    f"Empty route (no-green). No customers feasible from depot {route_start_depot}. {len(unvisited)} remain."
+                        #)
+                        #logging.error(f"Unserved customers: {sorted(list(unvisited))}")
+                        return routes if routes else [[route_start_depot, route_start_depot]]
+
+                    route.append(route_start_depot)
+                    break
+
+                best_idx = int(np.argmin(scores))
+                best_customer = feasible_candidates[best_idx]
+
+                # Execute move
+                dist_to_best = instance.dist_matrix[current_node, best_customer]
+                route.append(best_customer)
+                load += instance.demands[best_customer]
+                unvisited.remove(best_customer)
+                current_route_distance += dist_to_best
+
+                if has_tw:
+                    arrival = current_time + dist_to_best
+                    ready = instance.ready_times[best_customer]
+                    service = instance.service_times[best_customer]
+                    start_service = max(arrival, ready)
+                    current_time = start_service + service
+                else:
+                    current_time += dist_to_best
+
+                current_node = best_customer
+                customers_added_this_route += 1
+
+            routes.append(route)
+
+        return routes
+
     def solve_with_scoring(self, instance, feature_extractor, scoring_func, bool_capacity=True) -> List[List[int]]:
         """
         Route construction with multi-depot support.
@@ -659,15 +950,6 @@ class VRPProblemType:
                     else:
                         features["remaining_capacity"] = 0.0
                     feature_values = self.extract_feature_values(features)
-
-                    # Debug: detect non-finite inputs to GP scoring function
-                    if not np.all(np.isfinite(feature_values)):
-                        print("\n[solve_with_scoring] Non-finite feature values in inner routing scoring")
-                        print("  problem_type:", self.name)
-                        print("  current_node:", current_node, "candidate:", customer)
-                        print("  route:", route)
-                        print("  features:", features)
-                        print("  feature_values:", feature_values)
 
                     try:
                         score = scoring_func(*feature_values)
