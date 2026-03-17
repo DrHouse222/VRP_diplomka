@@ -37,7 +37,6 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
     """
     problem_type = record.get("problem_type", "UNKNOWN")
     bool_capacity = record.get("bool_capacity", False)
-    seed = record.get("seed", None)
     log_evolution: List[Dict[str, Any]] = record.get("log_evolution", [])
 
     if not log_evolution:
@@ -74,11 +73,11 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
         plt.xlabel("Generation")
         plt.ylabel("Fitness")
         title_suffix = " (capacity ON)" if bool_capacity else " (capacity OFF)"
-        plt.title(f"Fitness evolution: {problem_type}{title_suffix}, seed={seed}")
+        plt.title(f"Fitness evolution: {problem_type}{title_suffix}")
         plt.grid(True, linestyle="--", alpha=0.4)
         plt.legend()
 
-        fname = f"fitness_{problem_type}_cap{int(bool_capacity)}_seed{seed}.png"
+        fname = f"fitness_{problem_type}_cap{int(bool_capacity)}.png"
         plt.tight_layout()
         plt.savefig(os.path.join(out_dir, fname))
         plt.close()
@@ -92,11 +91,11 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
         plt.xlabel("Generation")
         plt.ylabel("Tree size (nodes)")
         title_suffix = " (capacity ON)" if bool_capacity else " (capacity OFF)"
-        plt.title(f"Tree size evolution: {problem_type}{title_suffix}, seed={seed}")
+        plt.title(f"Tree size evolution: {problem_type}{title_suffix}")
         plt.grid(True, linestyle="--", alpha=0.4)
         plt.legend()
 
-        fname = f"size_{problem_type}_cap{int(bool_capacity)}_seed{seed}.png"
+        fname = f"size_{problem_type}_cap{int(bool_capacity)}.png"
         plt.tight_layout()
         plt.savefig(os.path.join(out_dir, fname))
         plt.close()
@@ -121,7 +120,7 @@ def main(
 
     print(f"Loaded {len(experiments)} experiments from {results_path}")
     for i, rec in enumerate(experiments):
-        print(f"  Plotting experiment {i+1}/{len(experiments)}: {rec.get('problem_type')} (cap={rec.get('bool_capacity')}, seed={rec.get('seed')})")
+        print(f"  Plotting experiment {i+1}/{len(experiments)}: {rec.get('problem_type')} (cap={rec.get('bool_capacity')})")
         plot_single_experiment(rec, output_dir)
 
     print(f"Graphs saved to {output_dir}")

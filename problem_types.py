@@ -298,9 +298,7 @@ class VRPProblemType:
                             best_pair = (candidate_depot, customer)
 
                 if best_pair is None:
-                    logging.warning(
-                        f"No feasible depot-customer pair found (no-green). {len(unvisited)} customers remain."
-                    )
+                    logging.warning(f"No feasible depot-customer pair found (no-green). {len(unvisited)} customers remain.")
                     break
 
                 route_start_depot, first_customer = best_pair
@@ -669,7 +667,7 @@ class VRPProblemType:
                             best_depot_customer_pair = (candidate_depot, customer)
                 
                 if best_depot_customer_pair is None:
-                    logging.warning(f"No feasible depot-customer pair found. {len(unvisited)} customers remain.")
+                    #logging.warning(f"No feasible depot-customer pair found. {len(unvisited)} customers remain.")
                     break
                 
                 route_start_depot, first_customer = best_depot_customer_pair
@@ -964,8 +962,8 @@ class VRPProblemType:
                 if not feasible_candidates:
                     # SAFEGUARD: Check if we added any customers this route
                     if customers_added_this_route == 0:
-                        logging.warning(f"Empty route. No customers feasible from depot {route_start_depot}. {len(unvisited)} remain.")
-                        logging.error(f"Unserved customers: {sorted(list(unvisited))}")
+                        #logging.warning(f"Empty route. No customers feasible from depot {route_start_depot}. {len(unvisited)} remain.")
+                        #logging.error(f"Unserved customers: {sorted(list(unvisited))}")
                         # Return what we have so far rather than infinite loop
                         return routes if routes else [[route_start_depot, route_start_depot]]
 
@@ -1071,6 +1069,7 @@ class VRPProblemType:
         # Final check
         if unvisited:
             logging.warning(f"Algorithm completed with {len(unvisited)} unvisited customers: {sorted(list(unvisited))}")
+            logging.warning(f"Name of instance: {getattr(instance, 'name', 'unknown')}")
 
         return routes
 

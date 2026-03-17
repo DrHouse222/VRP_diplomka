@@ -79,14 +79,14 @@ def run_all_experiments(
     # Problem map matches DEAP_gen.main
     def build_problem_map():
         return {
-            (False, False, False): ("CVRP", cvrp_instances),
+            (False, False, False): ("VRP", cvrp_instances),
             (True, False, False): ("VRPTW", vrptw_instances),
             (False, True, False): (
                 "GVRP",
                 remove_tw_from_gvrp(copy.deepcopy(gvrp_instances)),
             ),
             (True, True, False): ("G-VRPTW", gvrp_instances),
-            (False, False, True): ("MDCVRP", mdvrp_instances),
+            (False, False, True): ("MDVRP", mdvrp_instances),
             (True, False, True): ("MDVRPTW", mdvrptw_instances),
             (False, True, True): (
                 "GVRP-MD",
@@ -117,9 +117,12 @@ def run_all_experiments(
                             continue
 
                         # Per-experiment seed
-                        seed = None
                         if base_seed is not None:
                             seed = int(base_seed) + exp_index
+                        else:
+                            # Use a random seed when base_seed is not provided
+                            import random
+                            seed = random.randint(0, 2**31 - 1)
                         exp_index += 1
 
                         print(

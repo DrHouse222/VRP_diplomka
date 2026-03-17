@@ -349,7 +349,7 @@ def plot_route(instance, route, title=None, ax=None, fitness=None):
         elif has_tw:
             base_title = "VRPTW"
         else:
-            base_title = "CVRP"
+            base_title = "VRP"
         
         if len(routes) > 1:
             title = f"{base_title} - All Routes"
@@ -539,7 +539,7 @@ def load_instances_by_type():
         except Exception as e:
             print(f"Warning: Failed to load {filepath}: {e}")
 
-    print(f"Loaded {len(cvrp_instances)} CVRP instances")
+    print(f"Loaded {len(cvrp_instances)} VRP instances")
     print(f"Loaded {len(vrptw_instances)} VRPTW instances")
     print(f"Loaded {len(gvrp_instances)} GVRP instances")
     print(f"Loaded {len(mdvrp_instances)} MDVRP instances")
@@ -551,7 +551,7 @@ def main():
 
     # Choose variants
     bool_capacity = 1
-    bool_TW = 1
+    bool_TW = 0
     bool_green = 0
     bool_MD = 1
 
@@ -561,11 +561,11 @@ def main():
 
     # Mapping: (TW, green, MD) -> (Problem Name, Data List)
     problem_map = {
-        (False, False, False): ("CVRP", cvrp_instances),
+        (False, False, False): ("VRP", cvrp_instances),
         (True, False, False):  ("VRPTW", vrptw_instances),
         (False, True, False):  ("GVRP", remove_tw_from_gvrp(copy.deepcopy(gvrp_instances))),
         (True, True, False):   ("G-VRPTW", gvrp_instances),
-        (False, False, True):  ("MDCVRP", mdvrp_instances),
+        (False, False, True):  ("MDVRP", mdvrp_instances),
         (True, False, True):   ("MDVRPTW", mdvrptw_instances),
         (False, True, True):   ("GVRP-MD", evrptw_to_multi_depot(remove_tw_from_gvrp(copy.deepcopy(gvrp_instances)))),
         (True, True, True):    ("G-VRPTW-MD", evrptw_to_multi_depot(gvrp_instances))

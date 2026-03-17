@@ -99,11 +99,11 @@ def build_scoring_callable(heuristic_code: str):
 def load_problem_map():
     cvrp, vrptw, gvrp, mdvrp, mdvrptw = load_instances_by_type()
     return {
-        (False, False, False): ("CVRP", cvrp),
+        (False, False, False): ("VRP", cvrp),
         (True, False, False): ("VRPTW", vrptw),
         (False, True, False): ("GVRP", remove_tw_from_gvrp(copy.deepcopy(gvrp))),
         (True, True, False): ("G-VRPTW", gvrp),
-        (False, False, True): ("MDCVRP", mdvrp),
+        (False, False, True): ("MDVRP", mdvrp),
         (True, False, True): ("MDVRPTW", mdvrptw),
         (False, True, True): ("GVRP-MD", evrptw_to_multi_depot(remove_tw_from_gvrp(copy.deepcopy(gvrp)))),
         (True, True, True): ("G-VRPTW-MD", evrptw_to_multi_depot(gvrp)),
