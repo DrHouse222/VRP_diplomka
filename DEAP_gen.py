@@ -380,7 +380,7 @@ def plot_route(instance, route, title=None, ax=None, fitness=None):
         customers = [i for i in range(n) if node_types[i] == 1]
         stations = [i for i in range(n) if node_types[i] == 2]
     else:
-        # CVRP/VRPTW: depot is at index 0 (or instance.depot), rest are customers
+        # VRP/VRPTW: depot is at index 0 (or instance.depot), rest are customers
         depots = [depot]
         customers = [i for i in range(n) if i != depot]
         stations = []

@@ -2,8 +2,8 @@
 """
 Batch runner for GP VRP experiments.
 
-Iterates over all supported problem variants (CVRP, VRPTW, GVRP, G-VRPTW,
-MDCVRP, MDVRPTW, GVRP-MD, G-VRPTW-MD) and runs GP for each combination
+Iterates over all supported problem variants (VRP, VRPTW, GVRP, G-VRPTW,
+MDVRP, MDVRPTW, GVRP-MD, G-VRPTW-MD) and runs GP for each combination
 of capacity constraint (on/off) and problem type.
 
 Results (best evolved expression, fitness, timings, flags) are saved
@@ -227,10 +227,10 @@ def run_all_experiments(
 if __name__ == "__main__":
     # Example: run quick experiments with a time budget per variant
     run_all_experiments(
-        output_path="experiment_results.jsonl",
+        output_path="experiment_results_test.jsonl",
         population_size=200,
         generations=10000,
-        time_limit_sec=3000,  # e.g. set to 300 for 5-minute budget per variant
+        time_limit_sec=600,  # e.g. set to 300 for 5-minute budget per variant
         n_train=5,
         n_test=-1,
         cxpb=1.0,

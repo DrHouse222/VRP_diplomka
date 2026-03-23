@@ -10,410 +10,39 @@ from data_generation import convert_vrptw_to_gvrptw
 from typing import List, Tuple, Optional
 
 
+from parser import VRPFeatureExtractor
+from problem_types import VRP_PROBLEM_TYPE
+
 def nearest_neighbor_heuristic(instance, bool_capacity=True):
     """
-    Build routes using a nearest neighbor heuristic.
-    Supports CVRP, VRPTW, and GVRP variants.
-
-    Args:
-        instance: VRP, VRPTW, or GVRP instance
-        problem: one of {"auto", "vrp", "vrptw", "gvrp"} (auto-detect if "auto")
-        bool_capacity: If True, enforce capacity constraints; if False, ignore capacity
-
-    Returns:
-        list of routes (list of lists of node indices)
+    Nearest-neighbor baseline implemented via the generic solve_with_scoring
+    machinery: the scoring function is simply the current distance to the
+    candidate customer (dist_from_current), so the solver always prefers
+    the nearest feasible customer. No force-adding of customers; any
+    unserved customers are penalized via compute_cost.
     """
-    n = instance.dimension
-    depot = getattr(instance, "depot", 0)
-    depots = getattr(instance, "depots", None)
-    is_multi_depot = depots is not None and len(depots) > 1
-    depots_list = depots if is_multi_depot else [depot]
-    
-    # Auto-detect problem type
-    has_tw = all(hasattr(instance, attr) for attr in ("ready_times", "due_dates", "service_times"))
+    # Find index of dist_from_current in the unified feature vector
+    try:
+        idx = VRP_PROBLEM_TYPE.feature_names.index("dist_from_current")
+    except ValueError:
+        idx = 1  # very conservative fallback if the name is missing
+
+    def nn_scoring_func(*feature_values):
+        return float(feature_values[idx])
+
     has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
-    
-    # GVRP setup
-    battery_cap = getattr(instance, "battery_capacity", float('inf')) if has_battery else float('inf')
-    energy_per_dist = getattr(instance, "energy_consumption", 1.0)
-    max_travel_time_raw = getattr(instance, "max_travel_time", None)
-    if max_travel_time_raw is not None and max_travel_time_raw > 0 and np.isfinite(max_travel_time_raw):
-        has_max_travel_time = True
-        max_travel_time = float(max_travel_time_raw)
+    feature_extractor = VRPFeatureExtractor(instance)
+
+    if has_battery:
+        # Full green VRP logic (stations, battery, etc.)
+        return VRP_PROBLEM_TYPE.solve_with_scoring(
+            instance, feature_extractor, nn_scoring_func, bool_capacity
+        )
     else:
-        has_max_travel_time = False
-        max_travel_time = float('inf')
-    # Linear charging: time = charge_rate * energy_needed
-    base_charge_time = 100.0  # Time to charge from 0% to 100%
-    charge_rate = base_charge_time / battery_cap if has_battery and battery_cap > 0 else 0.0
-    
-    def compute_charge_time(current_batt):
-        """Compute linear charging time based on current battery level."""
-        if not has_battery:
-            return 0.0
-        energy_needed = battery_cap - current_batt
-        return charge_rate * energy_needed
-    
-    # Identify charging stations (type 2)
-    node_types = getattr(instance, "node_types", None)
-    if node_types is not None:
-        stations = [i for i in range(n) if node_types[i] == 2]
-    else:
-        stations = []
-    
-    # Pre-calculate distance to nearest charger for every node (safety check)
-    dist_to_nearest_charger = {}
-    for i in range(n):
-        if not stations:
-            dist_to_nearest_charger[i] = 0
-        else:
-            min_dist = min(instance.dist_matrix[i, cs] for cs in stations)
-            dist_to_nearest_charger[i] = min_dist
-    
-    # Initialize unvisited set (exclude all depots and charging stations)
-    unvisited = set(range(0, n))
-    for d in depots_list:
-        unvisited.discard(d)
-    if node_types is not None:
-        for i in range(n):
-            if node_types[i] == 2:  # Charging station
-                unvisited.discard(i)
-    
-    if bool_capacity:
-        max_capacity = getattr(instance, "capacity", 0.0)
-    else:
-        max_capacity = float('inf')
-    routes = []
-
-    while unvisited:
-        # Multi-depot: choose best depot–customer pair by nearest distance (feasible)
-        route_start_depot = depot
-        first_customer = None
-        if is_multi_depot:
-            best_dist = float('inf')
-            for candidate_depot in depots_list:
-                for customer in unvisited:
-                    demand = instance.demands[customer]
-                    if demand > max_capacity:
-                        continue
-                    dist_direct = instance.dist_matrix[candidate_depot, customer]
-                    energy_direct = dist_direct * energy_per_dist
-                    if has_battery and energy_direct > battery_cap:
-                        continue
-                    if has_battery:
-                        batt_after = battery_cap - energy_direct
-                        if batt_after < dist_to_nearest_charger[customer] * energy_per_dist:
-                            continue
-                    if has_tw:
-                        if dist_direct > instance.due_dates[customer]:
-                            continue
-                        ready = instance.ready_times[customer]
-                        service = instance.service_times[customer]
-                        dept_time = max(dist_direct, ready) + service
-                        dist_home = instance.dist_matrix[customer, candidate_depot]
-                        if dept_time + dist_home > instance.due_dates[candidate_depot]:
-                            continue
-                    if has_max_travel_time:
-                        service = getattr(instance, "service_times", np.zeros(n))[customer] if hasattr(instance, "service_times") else 0.0
-                        dist_home = instance.dist_matrix[customer, candidate_depot]
-                        arrival_at_depot = dist_direct + service + dist_home
-                        if arrival_at_depot > max_travel_time:
-                            continue
-                    if dist_direct < best_dist:
-                        best_dist = dist_direct
-                        route_start_depot = candidate_depot
-                        first_customer = customer
-            if first_customer is None:
-                break
-        route = [route_start_depot]
-        load = 0.0
-        current_node = route_start_depot
-        current_time = 0.0
-        current_battery = battery_cap
-        if is_multi_depot and first_customer is not None:
-            route.append(first_customer)
-            load += instance.demands[first_customer]
-            unvisited.remove(first_customer)
-            current_node = first_customer
-            dist_to_cust = instance.dist_matrix[route_start_depot, first_customer]
-            if has_tw:
-                arrival = current_time + dist_to_cust
-                ready = instance.ready_times[first_customer]
-                service = instance.service_times[first_customer]
-                current_time = max(arrival, ready) + service
-            else:
-                current_time += dist_to_cust
-            if has_battery:
-                current_battery -= dist_to_cust * energy_per_dist
-
-        while True:
-            feasible_candidates = []
-            candidate_distances = []
-            candidate_infos = []  # Store move info: {is_direct, dist, station, arrival}
-            
-            for customer in unvisited:
-                demand = instance.demands[customer]
-                
-                # 1. Capacity check
-                if load + demand > max_capacity:
-                    continue
-                
-                # 2. Find feasible move (direct or via station)
-                valid_move_found = False
-                best_move_info = None
-                best_dist = float('inf')
-                
-                # OPTION A: Direct move
-                dist_direct = instance.dist_matrix[current_node, customer]
-                energy_direct = dist_direct * energy_per_dist
-                
-                if not has_battery or current_battery >= energy_direct:
-                    # Safety check: can we leave customer to reach a charger?
-                    if not has_battery:
-                        # No battery constraints
-                        valid_direct = True
-                    else:
-                        batt_after = current_battery - energy_direct
-                        energy_safety = dist_to_nearest_charger[customer] * energy_per_dist
-                        valid_direct = (batt_after >= energy_safety)
-                    
-                    if valid_direct:
-                        arrival_direct = current_time + dist_direct
-                        
-                        # Time window check
-                        if not has_tw or arrival_direct <= instance.due_dates[customer]:
-                            # Check return to depot
-                            ready = instance.ready_times[customer] if has_tw else 0.0
-                            service = instance.service_times[customer] if has_tw else 0.0
-                            dept_time = max(arrival_direct, ready) + service
-                            dist_home = instance.dist_matrix[customer, route_start_depot]
-                            
-                            if not has_tw or (dept_time + dist_home <= instance.due_dates[route_start_depot]):
-                                valid_move_found = True
-                                best_move_info = {
-                                    'is_direct': True,
-                                    'dist': dist_direct,
-                                    'arrival': arrival_direct,
-                                    'station': None
-                                }
-                                best_dist = dist_direct
-                
-                # OPTION B: Via charging station
-                if not valid_move_found and has_battery and stations:
-                    min_total_dist = float('inf')
-                    
-                    # Pre-compute distance from current_node to all stations (cache for this iteration)
-                    station_dists = [(s, instance.dist_matrix[current_node, s]) for s in stations]
-                    # Sort by distance to current node (closer stations first - likely to be better)
-                    station_dists.sort(key=lambda x: x[1])
-                    
-                    for station, d1 in station_dists:
-                        # Early skip if this station is already worse than best found
-                        if d1 >= min_total_dist:
-                            break  # Since stations are sorted, all remaining are worse
-                        
-                        e1 = d1 * energy_per_dist
-                        if current_battery < e1:
-                            continue
-                        
-                        d2 = instance.dist_matrix[station, customer]
-                        e2 = d2 * energy_per_dist
-                        total_dist = d1 + d2
-                        
-                        # Early skip if total distance is worse than best
-                        if total_dist >= min_total_dist:
-                            continue
-                        
-                        if battery_cap < e2:
-                            continue
-                        
-                        # Safety check at destination
-                        if (battery_cap - e2) < (dist_to_nearest_charger[customer] * energy_per_dist):
-                            continue
-                        
-                        # Time window check
-                        arrival_at_station = current_time + d1
-                        # Calculate battery level when arriving at station
-                        batt_at_station = current_battery - (d1 * energy_per_dist)
-                        charge_time = compute_charge_time(batt_at_station)
-                        dept_from_station = arrival_at_station + charge_time
-                        arrival_at_cust = dept_from_station + d2
-                        
-                        if has_tw:
-                            if arrival_at_cust > instance.due_dates[customer]:
-                                continue
-                            ready = instance.ready_times[customer]
-                            service = instance.service_times[customer]
-                            dept_cust = max(arrival_at_cust, ready) + service
-                            dist_home = instance.dist_matrix[customer, route_start_depot]
-                            arrival_at_depot = dept_cust + dist_home
-                            if arrival_at_depot > instance.due_dates[route_start_depot] or (has_max_travel_time and arrival_at_depot > max_travel_time):
-                                continue
-                        else:
-                            # For non-TW, check max travel time (if applicable)
-                            if has_max_travel_time:
-                                service = getattr(instance, "service_times", np.zeros(n))[customer] if hasattr(instance, "service_times") else 0.0
-                                dist_home = instance.dist_matrix[customer, route_start_depot]
-                                arrival_at_depot = arrival_at_cust + service + dist_home
-                                if arrival_at_depot > max_travel_time:
-                                    continue
-                        
-                        valid_move_found = True
-                        min_total_dist = total_dist
-                        best_move_info = {
-                            'is_direct': False,
-                            'dist': total_dist,
-                            'arrival': arrival_at_cust,
-                            'station': station,
-                            'station_dist': d1
-                        }
-                        best_dist = total_dist
-                
-                if not valid_move_found:
-                    continue
-                
-                feasible_candidates.append(customer)
-                candidate_distances.append(best_dist)
-                candidate_infos.append(best_move_info)
-            
-            # No feasible candidates - finish route
-            if not feasible_candidates:
-                # Check if we need to charge before returning to depot
-                if has_battery and current_node != route_start_depot:
-                    dist_to_depot = instance.dist_matrix[current_node, route_start_depot]
-                    energy_needed = dist_to_depot * energy_per_dist
-                    
-                    if current_battery < energy_needed and stations:
-                        best_station = None
-                        min_total_dist = float('inf')
-                        
-                        # Pre-compute and sort stations by distance to current node
-                        station_dists = [(s, instance.dist_matrix[current_node, s]) for s in stations]
-                        station_dists.sort(key=lambda x: x[1])
-                        
-                        for station, d1 in station_dists:
-                            # Early termination: if d1 alone is worse than best total, skip
-                            if d1 >= min_total_dist:
-                                break
-                            
-                            d2 = instance.dist_matrix[station, route_start_depot]
-                            e1 = d1 * energy_per_dist
-                            e2 = d2 * energy_per_dist
-                            
-                            if current_battery < e1:
-                                continue
-                            if battery_cap < e2:
-                                continue
-                            
-                            total_dist = d1 + d2
-                            if total_dist >= min_total_dist:
-                                continue
-                            
-                            if has_tw:
-                                arrival_stat = current_time + d1
-                                # Calculate battery level when arriving at station
-                                batt_at_station = current_battery - (d1 * energy_per_dist)
-                                charge_time = compute_charge_time(batt_at_station)
-                                dept_stat = arrival_stat + charge_time
-                                arrival_depot = dept_stat + d2
-                                if arrival_depot > instance.due_dates[route_start_depot]:
-                                    continue
-                            
-                            min_total_dist = total_dist
-                            best_station = station
-                        
-                        if best_station is not None:
-                            route.append(best_station)
-                            energy_to_station = instance.dist_matrix[current_node, best_station] * energy_per_dist
-                            current_battery -= energy_to_station
-                            current_time += instance.dist_matrix[current_node, best_station]
-                            # Charge at station (linear charging time)
-                            charge_time = compute_charge_time(current_battery)
-                            current_battery = battery_cap
-                            current_time += charge_time
-                            current_node = best_station
-                
-                route.append(route_start_depot)
-                
-                # Check if we added any customers to this route
-                # If route is just [route_start_depot, route_start_depot], no customers were served
-                if len(route) == 2 and route[0] == route_start_depot and route[1] == route_start_depot:
-                    # No customers could be served - force-add nearest customer (relaxing time windows)
-                    if unvisited:
-                        # Find nearest customer ignoring time windows
-                        nearest_customer = None
-                        nearest_dist = float('inf')
-                        for customer in unvisited:
-                            dist = instance.dist_matrix[current_node, customer]
-                            if dist < nearest_dist:
-                                nearest_dist = dist
-                                nearest_customer = customer
-                        
-                        if nearest_customer is not None:
-                            # Force-add this customer (violating time windows if necessary)
-                            route.insert(-1, nearest_customer)  # Insert before final depot
-                            unvisited.remove(nearest_customer)
-                            # Update state
-                            current_node = nearest_customer
-                            load += instance.demands[nearest_customer]
-                            if has_tw:
-                                current_time += nearest_dist
-                                current_time = max(current_time, instance.ready_times[nearest_customer])
-                                current_time += instance.service_times[nearest_customer]
-                            else:
-                                current_time += nearest_dist
-                            if has_battery:
-                                current_battery -= nearest_dist * energy_per_dist
-                            # Continue the route to try to add more customers
-                            continue
-                
-                break
-            
-            # Pick nearest neighbor (by distance)
-            best_idx = int(np.argmin(candidate_distances))
-            best_customer = feasible_candidates[best_idx]
-            info = candidate_infos[best_idx]
-            
-            # Execute move
-            if not info['is_direct']:
-                # Insert station first
-                station = info['station']
-                route.append(station)
-                energy_to_station = info['station_dist'] * energy_per_dist
-                current_battery -= energy_to_station
-                current_time += info['station_dist']
-                # Charge at station (linear charging time)
-                charge_time = compute_charge_time(current_battery)
-                current_battery = battery_cap
-                current_time += charge_time
-                travel_to_cust = instance.dist_matrix[station, best_customer]
-            else:
-                travel_to_cust = info['dist']
-            
-            # Insert customer
-            route.append(best_customer)
-            load += instance.demands[best_customer]
-            unvisited.remove(best_customer)
-            current_node = best_customer
-            
-            # Update time
-            if has_tw:
-                arrival = current_time + travel_to_cust
-                ready = instance.ready_times[best_customer]
-                service = instance.service_times[best_customer]
-                start_service = max(arrival, ready)
-                current_time = start_service + service
-            else:
-                current_time += travel_to_cust
-            
-            # Update battery
-            if has_battery:
-                energy_used = travel_to_cust * energy_per_dist
-                current_battery -= energy_used
-
-        routes.append(route)
-
-    return routes
+        # Non-green version that ignores battery logic
+        return VRP_PROBLEM_TYPE.solve_with_scoring_without_green(
+            instance, feature_extractor, nn_scoring_func, bool_capacity
+        )
 
 def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
     """
@@ -1400,12 +1029,12 @@ if __name__ == "__main__":
         ]
     )
     
-    print(f"Found {len(cvrp_files)} CVRP, {len(vrptw_files)} VRPTW, {len(gvrp_files)} GVRP instances")
+    print(f"Found {len(cvrp_files)} VRP, {len(vrptw_files)} VRPTW, {len(gvrp_files)} GVRP instances")
     print("=" * 80)
     
     results = []
     
-    # Process CVRP instances (with bool_capacity=True and False)
+    # Process VRP instances (with bool_capacity=True and False)
     for bool_cap in [True, False]:
         for filepath in cvrp_files:
             try:
@@ -1420,7 +1049,7 @@ if __name__ == "__main__":
                 
                 result = {
                     "instance_name": instance_name,
-                    "problem_type": "CVRP",
+                    "problem_type": "VRP",
                     "bool_capacity": bool_cap,
                     "filepath": filepath,
                     "num_customers": num_customers,
@@ -1431,10 +1060,10 @@ if __name__ == "__main__":
                 results.append(result)
                 
                 cap_str = "cap=True " if bool_cap else "cap=False"
-                print(f"{instance_name:40s} | CVRP | {cap_str:9s} | Routes: {len(routes):3d} | Fitness: {fitness:12.2f}")
+                print(f"{instance_name:40s} | VRP | {cap_str:9s} | Routes: {len(routes):3d} | Fitness: {fitness:12.2f}")
                 
             except Exception as e:
-                print(f"Error processing CVRP {filepath}: {e}")
+                print(f"Error processing VRP {filepath}: {e}")
                 continue
     
     # Process VRPTW instances (with bool_capacity=True and False)

@@ -1,6 +1,6 @@
 [
   {
-    "variant_name": "CVRP",
+    "variant_name": "VRP",
     "bool_capacity": false,
     "bool_TW": false,
     "bool_green": false,
@@ -8,7 +8,7 @@
     "heuristic_code": "add(mul(-1.0, savings), protected_div(dist_from_current, max(dist_to_depot, 1.0)))"
   },
   {
-    "variant_name": "MDCVRP",
+    "variant_name": "MDVRP",
     "bool_capacity": false,
     "bool_TW": false,
     "bool_green": false,
@@ -64,7 +64,7 @@
     "heuristic_code": "add(min(dist_to_depot, dist_from_current), max(protected_div(wait_time, arrival_time), protected_div(slack_to_due, due_time)))"
   },
   {
-    "variant_name": "CVRP",
+    "variant_name": "VRP",
     "bool_capacity": true,
     "bool_TW": false,
     "bool_green": false,
@@ -72,7 +72,7 @@
     "heuristic_code": "add(protected_div(demand, remaining_capacity), protected_div(dist_from_current, max(savings, 1.0)))"
   },
   {
-    "variant_name": "MDCVRP",
+    "variant_name": "MDVRP",
     "bool_capacity": true,
     "bool_TW": false,
     "bool_green": false,

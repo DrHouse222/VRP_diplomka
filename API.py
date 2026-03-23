@@ -142,11 +142,11 @@ def generate_all_vrp_heuristics(api_key: str) -> List[Dict[str, Any]]:
     """
     # Map (TW, green, MD) to variant name (as in DEAP_gen)
     variant_names: Dict[tuple, str] = {
-        (False, False, False): "CVRP",
+        (False, False, False): "VRP",
         (True,  False, False): "VRPTW",
         (False, True,  False): "GVRP",
         (True,  True,  False): "G-VRPTW",
-        (False, False, True):  "MDCVRP",
+        (False, False, True):  "MDVRP",
         (True,  False, True):  "MDVRPTW",
         (False, True,  True):  "GVRP-MD",
         (True,  True,  True):  "G-VRPTW-MD",

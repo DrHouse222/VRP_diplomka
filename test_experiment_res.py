@@ -77,8 +77,9 @@ def main(max_instances_per_variant=None, results_path: str = "experiment_results
         problem_type = rec.get("problem_type")
         bool_capacity = rec.get("bool_capacity", False)
         best_expr = rec.get("best_expr")
-        # Infer flags TW/green/MD from problem_type name
-        if problem_type == "VRP":
+        # Infer flags TW/green/MD from problem_type name.
+        # Accept both old labels (CVRP, MDCVRP) and new ones (VRP, MDVRP).
+        if problem_type in ("VRP", "CVRP"):
             bool_TW = False
             bool_green = False
             bool_MD = False
@@ -94,7 +95,7 @@ def main(max_instances_per_variant=None, results_path: str = "experiment_results
             bool_TW = True
             bool_green = True
             bool_MD = False
-        elif problem_type == "MDVRP":
+        elif problem_type in ("MDVRP", "MDCVRP"):
             bool_TW = False
             bool_green = False
             bool_MD = True

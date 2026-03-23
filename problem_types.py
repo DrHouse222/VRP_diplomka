@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Unified VRP problem type configuration.
-Handles both CVRP and CVRPTW automatically.
+Handles both VRP and VRPTW automatically.
 """
 
 from typing import List, Dict, Any, Optional
@@ -13,11 +13,11 @@ logging.basicConfig(level=logging.WARNING)
 
 
 class VRPProblemType:
-    """Unified configuration for VRP variants: CVRP, CVRPTW, and GVRP.
+    """Unified configuration for VRP variants: VRP, VRPTW, and GVRP.
     
     Automatically detects instance type and adapts accordingly:
-    - CVRP: Capacity constraints only
-    - CVRPTW: Capacity + Time Windows
+    - VRP: Capacity constraints only
+    - VRPTW: Capacity + Time Windows
     - GVRP: Capacity + Battery constraints + Charging stations
     """
     
@@ -29,7 +29,7 @@ class VRPProblemType:
             'depot_relative_workload', 'depot_distance_advantage', 'depot_rank'
         ]
     
-        # Time window features (only for CVRPTW)
+        # Time window features (only for VRPTW)
         self.tw_feature_names = [
             'arrival_time', 'due_time', 'wait_time', 'tw_feasible', 'slack_to_due'
         ]
@@ -77,7 +77,7 @@ class VRPProblemType:
     def create_primitive_set(self, gp_module) -> Optional[Any]:
         """Create GP primitive set for unified VRP (DEAP-specific).
         
-        Uses maximum number of features (32) to support CVRP, CVRPTW, and GVRP.
+        Uses maximum number of features (32) to support VRP, VRPTW, and GVRP.
         Missing features for specific instance types will be filled with 0.0.
         """
         if gp_module is None:
@@ -161,13 +161,15 @@ class VRPProblemType:
 
         unserved_customers = customers - served_customers
         if unserved_customers:
-            # Penalty scaled to instance: base on average distance, but at least 1000 per customer
-            try:
-                avg_dist = float(np.mean(dist_matrix))
-            except Exception:
-                avg_dist = 1.0
-            penalty_per_customer = max(1000.0, 10.0 * avg_dist)
-            total_distance += penalty_per_customer * len(unserved_customers)
+            # Penalty: 4x distance from nearest depot to that customer
+            depots = getattr(instance, "depots", None)
+            if depots is None:
+                depots = [depot]
+            for cust in unserved_customers:
+                # Distance from closest depot to this customer
+                dists = [float(dist_matrix[d, cust]) for d in depots]
+                min_dist = min(dists) if dists else 0.0
+                total_distance += 4.0 * min_dist
 
         return total_distance
 
@@ -581,7 +583,7 @@ class VRPProblemType:
                 best_depot_customer_pair = None
                 best_score = float('inf')
                 
-                # Evaluate all customers from all depots
+                # Evaluate all customers from all depots (direct moves first)
                 for candidate_depot in depots_list:
                     for customer in unvisited:
                         demand = instance.demands[customer]
@@ -590,7 +592,7 @@ class VRPProblemType:
                         if demand > max_capacity:
                             continue
                         
-                        # Check feasibility from this depot
+                        # Check direct feasibility from this depot
                         dist_direct = instance.dist_matrix[candidate_depot, customer]
                         energy_direct = dist_direct * energy_per_dist
                         
@@ -605,7 +607,6 @@ class VRPProblemType:
 
                         # Time window check (hard constraints)
                         arrival_direct = dist_direct  # Starting at time 0
-                        arrival_at_depot = None
                         if has_tw:
                             if arrival_direct > instance.due_dates[customer]:
                                 continue
@@ -621,7 +622,7 @@ class VRPProblemType:
                             dist_home = instance.dist_matrix[customer, candidate_depot]
                             arrival_at_depot = dist_direct + service + dist_home
                         
-                        # Score this depot-customer pair
+                        # Score this depot-customer pair (direct)
                         features = feature_extractor.extract_features(
                             request=customer,
                             current_route=[],
@@ -665,8 +666,117 @@ class VRPProblemType:
                         if score < best_score:
                             best_score = score
                             best_depot_customer_pair = (candidate_depot, customer)
+
+                # If no direct depot-customer pair is feasible, try via charging stations
+                if best_depot_customer_pair is None and has_battery and stations:
+                    # Try all charging stations (not just nearest) to see if we can
+                    # reach each unvisited customer via a feasible depot–station–customer path.
+                    for candidate_depot in depots_list:
+                        for customer in unvisited:
+                            demand = instance.demands[customer]
+                            if demand > max_capacity:
+                                continue
+
+                            # Consider ALL stations from this depot (not only nearest subset)
+                            min_total_dist = float("inf")
+                            candidate_stations = stations
+
+                            best_via_station_dist = None
+                            for station in candidate_stations:
+                                d1 = instance.dist_matrix[candidate_depot, station]
+                                e1 = d1 * energy_per_dist
+                                if battery_cap < e1:
+                                    continue
+
+                                d2 = instance.dist_matrix[station, customer]
+                                e2 = d2 * energy_per_dist
+                                total_dist = d1 + d2
+                                if total_dist >= min_total_dist:
+                                    continue
+
+                                if battery_cap < e2:
+                                    continue
+
+                                if (battery_cap - e2) < (dist_to_nearest_charger[customer] * energy_per_dist):
+                                    continue
+
+                                arrival_at_station = d1  # start at time 0
+                                batt_at_station = battery_cap - e1
+                                charge_time = compute_charge_time(batt_at_station)
+                                dept_from_station = arrival_at_station + charge_time
+                                arrival_at_cust = dept_from_station + d2
+
+                                if has_tw:
+                                    if arrival_at_cust > instance.due_dates[customer]:
+                                        continue
+                                    ready = instance.ready_times[customer]
+                                    service = instance.service_times[customer]
+                                    dept_cust = max(arrival_at_cust, ready) + service
+                                    dist_home = instance.dist_matrix[customer, candidate_depot]
+                                    arrival_at_depot = dept_cust + dist_home
+                                    if arrival_at_depot > instance.due_dates[candidate_depot]:
+                                        continue
+                                    route_dist_if_added = total_dist + dist_home
+                                    if has_max_travel_dist and route_dist_if_added > max_travel_dist:
+                                        continue
+                                else:
+                                    if has_max_travel_dist:
+                                        dist_home = instance.dist_matrix[customer, candidate_depot]
+                                        route_dist_if_added = total_dist + dist_home
+                                        if route_dist_if_added > max_travel_dist:
+                                            continue
+
+                                min_total_dist = total_dist
+                                best_via_station_dist = total_dist
+
+                            if best_via_station_dist is None:
+                                continue
+
+                            # Score this depot-customer pair using via-station distance as dist_from_current
+                            features = feature_extractor.extract_features(
+                                request=customer,
+                                current_route=[],
+                                current_load=0.0,
+                                current_position=candidate_depot,
+                                current_time=0.0 if has_tw else 0.0,
+                                current_battery=battery_cap if has_battery else None,
+                                dist_to_nearest_charger=dist_to_nearest_charger if has_battery else None,
+                                route_depot=candidate_depot,
+                                bool_capacity=bool_capacity,
+                            )
+                            if is_multi_depot:
+                                total_started = sum(depot_route_counts.values()) or 1
+                                rel_workload = depot_route_counts.get(candidate_depot, 0) / total_started
+                            else:
+                                rel_workload = 0.0
+                            features["depot_relative_workload"] = rel_workload
+                            features["dist_from_current"] = best_via_station_dist
+                            features["savings"] = (
+                                features.get("dist_to_depot", 0.0)
+                                + features.get("dist_to_depot_from_request", 0.0)
+                                - best_via_station_dist
+                            )
+                            if bool_capacity:
+                                features["remaining_capacity"] = max_capacity - demand
+                            else:
+                                features["remaining_capacity"] = 0.0
+
+                            feature_values = self.extract_feature_values(features)
+                            try:
+                                score = scoring_func(*feature_values)
+                            except Exception:
+                                score = 1e6
+
+                            route_dist = best_via_station_dist + instance.dist_matrix[customer, candidate_depot]
+                            if has_max_travel_dist and route_dist > max_travel_dist:
+                                score += (route_dist - max_travel_dist)
+
+                            if score < best_score:
+                                best_score = score
+                                best_depot_customer_pair = (candidate_depot, customer)
                 
                 if best_depot_customer_pair is None:
+                    # No feasible way (direct or via station) to start a route.
                     #logging.warning(f"No feasible depot-customer pair found. {len(unvisited)} customers remain.")
                     break
                 
