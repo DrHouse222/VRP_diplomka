@@ -14,7 +14,9 @@ import json
 import os
 import time
 import copy
+import argparse
 from typing import Any, Dict, List
+import datetime
 
 from deap import gp
 
@@ -116,8 +118,9 @@ def run_all_experiments(
                         if not instances:
                             continue
 
+
                         # Per-experiment seed
-                        if base_seed is not None:
+                        if base_seed != 0:
                             seed = int(base_seed) + exp_index
                         else:
                             # Use a random seed when base_seed is not provided
@@ -225,15 +228,34 @@ def run_all_experiments(
 
 
 if __name__ == "__main__":
-    # Example: run quick experiments with a time budget per variant
+    print(f"Starting GP VRP experiments at {datetime.datetime.now().isoformat()}")
+    parser = argparse.ArgumentParser(description="Run GP VRP batch experiments.")
+    parser.add_argument("--n_train", type=int, default=5, help="Number of training instances per variant.")
+    parser.add_argument("--n_test", type=int, default=-1, help="Number of test instances per variant (-1 uses remaining).")
+    parser.add_argument("--cxpb", type=float, default=1.0, help="Crossover probability.")
+    parser.add_argument("--mutpb", type=float, default=0.2, help="Mutation probability.")
+
+    # Keep existing defaults for the rest
+    parser.add_argument("--output_path", type=str, default="experiment_results_test.jsonl")
+    parser.add_argument("--population_size", type=int, default=200)
+    parser.add_argument("--generations", type=int, default=200)
+    parser.add_argument("--time_limit_sec", type=float, default=10000)
+    parser.add_argument("--base_seed", type=int, default=0)
+
+    args = parser.parse_args()
+
+    args.output_path = "results/" + args.output_path
+
     run_all_experiments(
-        output_path="experiment_results_test.jsonl",
-        population_size=200,
-        generations=10000,
-        time_limit_sec=600,  # e.g. set to 300 for 5-minute budget per variant
-        n_train=5,
-        n_test=-1,
-        cxpb=1.0,
-        mutpb=0.2
+        output_path=args.output_path,
+        population_size=args.population_size,
+        generations=args.generations,
+        time_limit_sec=args.time_limit_sec,
+        n_train=args.n_train,
+        n_test=args.n_test,
+        base_seed=args.base_seed,
+        cxpb=args.cxpb,
+        mutpb=args.mutpb,
     )
+    print(f"Finished GP VRP experiments at {datetime.datetime.now().isoformat()}")
 

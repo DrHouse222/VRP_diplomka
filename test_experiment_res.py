@@ -45,7 +45,11 @@ def build_scoring_from_expr(expr_str: str):
     return func
 
 
-def main(max_instances_per_variant=None, results_path: str = "experiment_results.jsonl"):
+def main(
+    max_instances_per_variant=None,
+    results_path: str = "exp_test.jsonl",
+    output_csv_path: str | None = None,
+):
     """
     Evaluate best_expr from experiment_results.jsonl against NN and Savings.
 
@@ -242,7 +246,12 @@ def main(max_instances_per_variant=None, results_path: str = "experiment_results
     print("=" * 110)
 
     # Save CSV
-    csv_path = os.path.join(os.path.dirname(__file__), "test_experiment_res_results.csv")
+    if output_csv_path is None:
+        base = os.path.splitext(os.path.basename(results_path))[0]
+        out_dir = os.path.dirname(results_path) or os.path.dirname(__file__)
+        csv_path = os.path.join(out_dir, f"{base}.csv")
+    else:
+        csv_path = output_csv_path
     with open(csv_path, "w", encoding="utf-8") as f:
         f.write(
             "index,problem_type,bool_capacity,n_instances,"
@@ -263,12 +272,52 @@ def main(max_instances_per_variant=None, results_path: str = "experiment_results
 
 if __name__ == "__main__":
     import sys
+    import os
+    import glob
 
     n_inst = None
-    if len(sys.argv) > 1:
-        try:
-            n_inst = int(sys.argv[1])
-        except ValueError:
-            n_inst = None
-    main(max_instances_per_variant=n_inst)
+    args = sys.argv[1:]
+
+    # If first argument is a directory, run in batch mode over all JSONL files
+    if args and os.path.isdir(args[0]):
+        experiments_dir = args[0]
+        exp_results_dir = os.path.join(os.path.dirname(__file__), "exp_results")
+        os.makedirs(exp_results_dir, exist_ok=True)
+
+        if len(args) > 1:
+            try:
+                n_inst = int(args[1])
+            except ValueError:
+                n_inst = None
+
+        for path in sorted(glob.glob(os.path.join(experiments_dir, "*.jsonl"))):
+            base = os.path.splitext(os.path.basename(path))[0]
+            out_csv = os.path.join(exp_results_dir, f"{base}.csv")
+            print(f"\n=== Evaluating {path} -> {out_csv} ===")
+            main(
+                max_instances_per_variant=n_inst,
+                results_path=path,
+                output_csv_path=out_csv,
+            )
+    else:
+        # Single-file mode (backwards compatible):
+        #   python test_experiment_res.py            -> uses default results_path
+        #   python test_experiment_res.py N         -> limit instances to N
+        #   python test_experiment_res.py file.jsonl [N]
+        results_path = "exp_test.jsonl"
+        if args:
+            if os.path.isfile(args[0]):
+                results_path = args[0]
+                if len(args) > 1:
+                    try:
+                        n_inst = int(args[1])
+                    except ValueError:
+                        n_inst = None
+            else:
+                try:
+                    n_inst = int(args[0])
+                except ValueError:
+                    pass
+
+        main(max_instances_per_variant=n_inst, results_path=results_path)
 

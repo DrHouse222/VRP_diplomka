@@ -102,8 +102,8 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
 
 
 def main(
-    results_path: str = "experiment_results.jsonl",
-    output_dir: str = "graphs",
+    results_path: str = "exp_test.jsonl",
+    output_dir: str = "graphs2",
 ) -> None:
     """
     Load experiment results and generate graphs for each experiment.

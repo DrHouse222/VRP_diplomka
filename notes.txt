@@ -2,13 +2,17 @@ conda env create -f environment.yml
 conda activate gpgomenv
 make
 pip install "numpy<2.0.0"
-
 pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
 
 
-TODO add/remove features
-TODO log which terminals and functions are used in best solutions
-
+ulimit -t unlimited
+nohup nice python run_experiments.py --n_train 5 --n_test -1 --cxpb 1.0 --mutpb 0.2 --output_path experiment_res.jsonl &
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --n_test -1 --cxpb 1.0 --mutpb 0.2 --output_path exp_test.jsonl > experiment.log 2>&1 &
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --n_test -1 --cxpb 1.0 --mutpb 0.2 --population_size 25 --generations 400 --time_limit_sec 20000 --output_path exp_test_p25_g400_1.jsonl > experiment.log 2>&1 &
+scp xcerve30@edesign1.fit.vutbr.cz:~/DIP/VRP_diplomka/experiment_results_test.jsonl ~/vut/DIP/VRP_diplomka
+scp run_experiments.py  xcerve30@edesign1.fit.vutbr.cz:~/DIP/VRP_diplomka/
+ps ux | grep run_experiments.py
+ssh xcerve30@edesign1.fit.vutbr.cz
 
 
 Eni Energy required to visit n i
