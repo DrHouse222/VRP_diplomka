@@ -8,6 +8,9 @@ of capacity constraint (on/off) and problem type.
 
 Results (best evolved expression, fitness, timings, flags) are saved
 to a JSONL file for later analysis.
+
+After all runs finish, test_experiment_res.main() evaluates every record
+in that JSONL (GP vs NN vs Savings) and writes the companion CSV.
 """
 
 import json
@@ -15,7 +18,7 @@ import os
 import time
 import copy
 import argparse
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import datetime
 
 from deap import gp
@@ -23,7 +26,6 @@ from deap import gp
 from DEAP_gen import (
     load_instances_by_type,
     train_and_test_problem_type,
-    train_and_test_problem_type_with_test_csv,
     remove_tw_from_gvrp,
     evrptw_to_multi_depot,
 )
@@ -33,13 +35,14 @@ def run_all_experiments(
     output_path: str = "experiment_results.jsonl",
     population_size: int = 100,
     generations: int = 10,
-    time_limit_sec: float | None = None,
+    time_limit_sec: Optional[float] = None,
     n_train: int = 5,
     n_test: int = -1,
-    base_seed: int | None = 0,
+    base_seed: Optional[int] = 0,
     cxpb: float = 0.8,
     mutpb: float = 0.15,
-    test_csv_dir: str | None = None,
+    run_test_experiment_res: bool = True,
+    max_eval_instances_per_variant: Optional[int] = None,
 ) -> None:
     """
     Run GP experiments across all supported problem variants and capacity settings.
@@ -66,16 +69,16 @@ def run_all_experiments(
         Crossover probability used inside GP.
     mutpb : float
         Mutation probability used inside GP.
-    test_csv_dir : str or None
-        If set, per-experiment test-set summaries are written as CSV files
-        (same columns as test_experiment_res.py) under this directory.
-        If None, uses train_and_test_problem_type (detailed per-instance test prints).
+    run_test_experiment_res : bool
+        If True, after the JSONL is written, call test_experiment_res.main()
+        on ``output_path`` to produce aggregate GP vs NN vs Savings CSV.
+    max_eval_instances_per_variant : int or None
+        Passed to test_experiment_res.main as max_instances_per_variant
+        (limit instances per variant for a quicker eval pass). None = all.
     """
 
     # Make sure directory exists
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    if test_csv_dir:
-        os.makedirs(test_csv_dir, exist_ok=True)
 
     # Load all instance groups once
     (
@@ -126,13 +129,13 @@ def run_all_experiments(
                         if not instances:
                             continue
 
-
                         # Per-experiment seed
                         if base_seed != 0:
                             seed = int(base_seed) + exp_index
                         else:
                             # Use a random seed when base_seed is not provided
                             import random
+
                             seed = random.randint(0, 2**31 - 1)
                         exp_index += 1
 
@@ -143,41 +146,21 @@ def run_all_experiments(
                         )
 
                         start = time.time()
-                        if test_csv_dir:
-                            test_csv_path = os.path.join(
-                                test_csv_dir,
-                                f"exp_{exp_index:04d}_{problem_type}_cap{int(bool_capacity)}_seed{seed}.csv",
-                            )
-                            results = train_and_test_problem_type_with_test_csv(
-                                all_instances=instances,
-                                problem_type=problem_type,
-                                bool_capacity=bool_capacity,
-                                bool_green=bool_green,
-                                n_train=n_train,
-                                n_test=n_test,
-                                population_size=population_size,
-                                generations=generations,
-                                time_limit_sec=time_limit_sec,
-                                seed=seed,
-                                cxpb=cxpb,
-                                mutpb=mutpb,
-                                test_csv_path=test_csv_path,
-                            )
-                        else:
-                            results = train_and_test_problem_type(
-                                all_instances=instances,
-                                problem_type=problem_type,
-                                bool_capacity=bool_capacity,
-                                bool_green=bool_green,
-                                n_train=n_train,
-                                n_test=n_test,
-                                population_size=population_size,
-                                generations=generations,
-                                time_limit_sec=time_limit_sec,
-                                seed=seed,
-                                cxpb=cxpb,
-                                mutpb=mutpb,
-                            )
+                        results = train_and_test_problem_type(
+                            all_instances=instances,
+                            problem_type=problem_type,
+                            bool_capacity=bool_capacity,
+                            bool_green=bool_green,
+                            n_train=n_train,
+                            n_test=n_test,
+                            population_size=population_size,
+                            generations=generations,
+                            time_limit_sec=time_limit_sec,
+                            seed=seed,
+                            cxpb=cxpb,
+                            mutpb=mutpb,
+                            evaluate_test_split=False,
+                        )
                         elapsed = time.time() - start
 
                         if not results:
@@ -255,6 +238,16 @@ def run_all_experiments(
                         f_out.write(json.dumps(record) + "\n")
                         f_out.flush()
 
+    if run_test_experiment_res:
+        from test_experiment_res import main as test_experiment_res_main
+
+        print(f"\n=== Evaluating JSONL with test_experiment_res: {output_path} ===")
+        test_experiment_res_main(
+            max_instances_per_variant=max_eval_instances_per_variant,
+            results_path=output_path,
+            output_csv_path=None,
+        )
+
 
 if __name__ == "__main__":
     print(f"Starting GP VRP experiments at {datetime.datetime.now().isoformat()}")
@@ -271,11 +264,15 @@ if __name__ == "__main__":
     parser.add_argument("--time_limit_sec", type=float, default=10000)
     parser.add_argument("--base_seed", type=int, default=0)
     parser.add_argument(
-        "--test_csv_dir",
-        type=str,
-        default="exp_results",
-        help="Directory for per-experiment test-set CSV summaries (test_experiment_res schema). "
-        "Set empty string to disable and use detailed test prints only.",
+        "--no_eval",
+        action="store_true",
+        help="Skip test_experiment_res evaluation after GP runs (no CSV from JSONL).",
+    )
+    parser.add_argument(
+        "--eval_max_instances",
+        type=int,
+        default=None,
+        help="Optional cap on instances per variant in test_experiment_res pass.",
     )
 
     args = parser.parse_args()
@@ -292,7 +289,7 @@ if __name__ == "__main__":
         base_seed=args.base_seed,
         cxpb=args.cxpb,
         mutpb=args.mutpb,
-        test_csv_dir=test_csv_dir,
+        run_test_experiment_res=not args.no_eval,
+        max_eval_instances_per_variant=args.eval_max_instances,
     )
     print(f"Finished GP VRP experiments at {datetime.datetime.now().isoformat()}")
-
