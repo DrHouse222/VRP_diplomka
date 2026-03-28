@@ -23,6 +23,7 @@ from deap import gp
 from DEAP_gen import (
     load_instances_by_type,
     train_and_test_problem_type,
+    train_and_test_problem_type_with_test_csv,
     remove_tw_from_gvrp,
     evrptw_to_multi_depot,
 )
@@ -38,6 +39,7 @@ def run_all_experiments(
     base_seed: int | None = 0,
     cxpb: float = 0.8,
     mutpb: float = 0.15,
+    test_csv_dir: str | None = None,
 ) -> None:
     """
     Run GP experiments across all supported problem variants and capacity settings.
@@ -64,10 +66,16 @@ def run_all_experiments(
         Crossover probability used inside GP.
     mutpb : float
         Mutation probability used inside GP.
+    test_csv_dir : str or None
+        If set, per-experiment test-set summaries are written as CSV files
+        (same columns as test_experiment_res.py) under this directory.
+        If None, uses train_and_test_problem_type (detailed per-instance test prints).
     """
 
     # Make sure directory exists
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    if test_csv_dir:
+        os.makedirs(test_csv_dir, exist_ok=True)
 
     # Load all instance groups once
     (
@@ -135,20 +143,41 @@ def run_all_experiments(
                         )
 
                         start = time.time()
-                        results = train_and_test_problem_type(
-                            all_instances=instances,
-                            problem_type=problem_type,
-                            bool_capacity=bool_capacity,
-                            bool_green=bool_green,
-                            n_train=n_train,
-                            n_test=n_test,
-                            population_size=population_size,
-                            generations=generations,
-                            time_limit_sec=time_limit_sec,
-                            seed=seed,
-                            cxpb=cxpb,
-                            mutpb=mutpb,
-                        )
+                        if test_csv_dir:
+                            test_csv_path = os.path.join(
+                                test_csv_dir,
+                                f"exp_{exp_index:04d}_{problem_type}_cap{int(bool_capacity)}_seed{seed}.csv",
+                            )
+                            results = train_and_test_problem_type_with_test_csv(
+                                all_instances=instances,
+                                problem_type=problem_type,
+                                bool_capacity=bool_capacity,
+                                bool_green=bool_green,
+                                n_train=n_train,
+                                n_test=n_test,
+                                population_size=population_size,
+                                generations=generations,
+                                time_limit_sec=time_limit_sec,
+                                seed=seed,
+                                cxpb=cxpb,
+                                mutpb=mutpb,
+                                test_csv_path=test_csv_path,
+                            )
+                        else:
+                            results = train_and_test_problem_type(
+                                all_instances=instances,
+                                problem_type=problem_type,
+                                bool_capacity=bool_capacity,
+                                bool_green=bool_green,
+                                n_train=n_train,
+                                n_test=n_test,
+                                population_size=population_size,
+                                generations=generations,
+                                time_limit_sec=time_limit_sec,
+                                seed=seed,
+                                cxpb=cxpb,
+                                mutpb=mutpb,
+                            )
                         elapsed = time.time() - start
 
                         if not results:
@@ -241,10 +270,17 @@ if __name__ == "__main__":
     parser.add_argument("--generations", type=int, default=200)
     parser.add_argument("--time_limit_sec", type=float, default=10000)
     parser.add_argument("--base_seed", type=int, default=0)
+    parser.add_argument(
+        "--test_csv_dir",
+        type=str,
+        default="exp_results",
+        help="Directory for per-experiment test-set CSV summaries (test_experiment_res schema). "
+        "Set empty string to disable and use detailed test prints only.",
+    )
 
     args = parser.parse_args()
 
-    args.output_path = "results/" + args.output_path
+    args.output_path = "experiments/" + args.output_path
 
     run_all_experiments(
         output_path=args.output_path,
@@ -256,6 +292,7 @@ if __name__ == "__main__":
         base_seed=args.base_seed,
         cxpb=args.cxpb,
         mutpb=args.mutpb,
+        test_csv_dir=test_csv_dir,
     )
     print(f"Finished GP VRP experiments at {datetime.datetime.now().isoformat()}")
 

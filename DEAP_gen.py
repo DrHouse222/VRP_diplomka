@@ -11,6 +11,7 @@ from problem_types import VRP_PROBLEM_TYPE
 from data_generation import convert_vrptw_to_gvrptw, remove_tw_from_gvrp, evrptw_to_multi_depot
 import time
 import copy
+import math
 import matplotlib.pyplot as plt
 import glob
 import os
@@ -326,6 +327,270 @@ def train_and_test_problem_type(
     print(f"{'='*60}")
     
     return best_individual, logbook, pset
+
+
+def train_and_test_problem_type_with_test_csv(
+    all_instances,
+    problem_type,
+    n_train: int = 6,
+    n_test: int = -1,
+    bool_capacity: bool = True,
+    population_size: int = 30,
+    generations: int = 30,
+    time_limit_sec: float | None = None,
+    seed: int | None = None,
+    cxpb: float = 0.8,
+    mutpb: float = 0.15,
+    bool_green: bool = True,
+    test_csv_path: str | None = None,
+):
+    """
+    Same as train_and_test_problem_type for training and training-set evaluation.
+
+    If ``test_csv_path`` is set, writes a CSV (same columns as test_experiment_res.py):
+    one row with aggregate GP / NN / Savings costs over the **training** instances,
+    and (when present) a second row over the **test** instances — matching how
+    test_experiment_res.py aggregates costs over a set of instances.
+    If ``test_csv_path`` is None but test instances exist, falls back to printing
+    per-instance test evaluation like train_and_test_problem_type.
+    """
+    if not all_instances:
+        print(f"No {problem_type} instances available, skipping...")
+        return None
+
+    total_count = len(all_instances)
+    if n_test == -1:
+        if n_train >= total_count:
+            train_instances = all_instances
+            test_instances = []
+            print(f"Warning: Using ALL {total_count} instances for training (Overfitting mode).")
+        else:
+            train_instances = all_instances[:n_train]
+            test_instances = all_instances[n_train:]
+    else:
+        if n_train + n_test > total_count:
+            n_test = total_count - n_train
+            print(f"Warning: Adjusted n_test to {n_test} due to insufficient instances.")
+        train_instances = all_instances[:n_train]
+        test_instances = all_instances[n_train : n_train + n_test]
+
+    print(f"\n{'='*60}")
+    print(f"Experiment Setup: {problem_type}")
+    print(f"Training Set    : {len(train_instances)} instances")
+    print(f"Testing Set     : {len(test_instances)} instances")
+    print(f"{'='*60}")
+
+    print(f"Starting Genetic Programming on {len(train_instances)} training instances...")
+    best_individual, logbook, pset = run_genetic_programming(
+        instances=train_instances,
+        bool_capacity=bool_capacity,
+        population_size=population_size,
+        generations=generations,
+        time_limit_sec=time_limit_sec,
+        seed=seed,
+        cxpb=cxpb,
+        mutpb=mutpb,
+        bool_green=bool_green,
+    )
+
+    func = gp.compile(expr=best_individual, pset=pset)
+    print(f"\n{problem_type} Evolved scoring formula:")
+    print(f"{str(best_individual)}")
+
+    def evaluate_set(name, dataset, collect_costs: bool = False):
+        if not dataset:
+            if collect_costs:
+                return 0.0, 0.0, ([], [], [])
+            return 0.0, 0.0
+
+        total_improvementNN = 0.0
+        total_improvementS = 0.0
+        gp_costs: list = []
+        nn_costs: list = []
+        s_costs: list = []
+
+        for i, instance in enumerate(dataset):
+            time_start = time.time()
+            feature_extractor = VRPFeatureExtractor(instance)
+
+            if bool_green:
+                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(
+                    instance, feature_extractor, func, bool_capacity
+                )
+            else:
+                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring_without_green(
+                    instance, feature_extractor, func, bool_capacity
+                )
+            gp_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, gp_routes)
+
+            nn_routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_capacity)
+            nn_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, nn_routes)
+
+            s_routes2 = saving_heuristic2(instance, bool_capacity=bool_capacity)
+            s_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, s_routes2)
+
+            if collect_costs:
+                gp_costs.append(gp_fitness)
+                nn_costs.append(nn_fitness)
+                s_costs.append(s_fitness)
+
+            if nn_fitness > 0:
+                impNN = ((nn_fitness - gp_fitness) / nn_fitness) * 100
+            else:
+                impNN = 0.0
+            if s_fitness > 0:
+                impS = ((s_fitness - gp_fitness) / s_fitness) * 100
+            else:
+                impS = 0.0
+
+            time_end = time.time()
+            elapsed = time_end - time_start
+
+            print(f"\nInstance {i+1}: {instance.name}")
+            print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
+            print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
+            print(f"  Saving Heuristic : Fitness = {s_fitness:.2f}")
+            print(f"  Improvement over NN (fitness): {impNN:.2f}%")
+            print(f"  Improvement over Saving (fitness): {impS:.2f}%")
+            print(f"  Time taken: {elapsed:.2f} seconds")
+
+            total_improvementNN += impNN
+            total_improvementS += impS
+
+        avg_nn = total_improvementNN / len(dataset)
+        avg_s = total_improvementS / len(dataset)
+        if collect_costs:
+            return avg_nn, avg_s, (gp_costs, nn_costs, s_costs)
+        return avg_nn, avg_s
+
+    def csv_metrics_from_cost_lists(gp_costs, nn_costs, s_costs):
+        """Same aggregation as test_experiment_res.py."""
+        n = len(gp_costs)
+        valid_gp = [c for c in gp_costs if not math.isnan(c)]
+        gp_avg = sum(valid_gp) / len(valid_gp) if valid_gp else float("nan")
+        nn_avg = sum(nn_costs) / n if n else float("nan")
+        s_avg = sum(s_costs) / n if n else float("nan")
+        pct_vs_nn = None
+        pct_vs_s = None
+        if not math.isnan(gp_avg):
+            if nn_avg > 0 and not math.isnan(nn_avg):
+                pct_vs_nn = ((nn_avg - gp_avg) / nn_avg) * 100.0
+            if s_avg > 0 and not math.isnan(s_avg):
+                pct_vs_s = ((s_avg - gp_avg) / s_avg) * 100.0
+        return n, gp_avg, nn_avg, s_avg, pct_vs_nn, pct_vs_s
+
+    test_impNN = 0.0
+    test_impS = 0.0
+    train_agg_nn = None
+    train_agg_s = None
+
+    if test_csv_path:
+        train_impNN, train_impS, train_lists = evaluate_set(
+            "TRAINING", train_instances, collect_costs=True
+        )
+        gpt, nnt, st = train_lists
+        _, _, _, _, train_agg_nn, train_agg_s = csv_metrics_from_cost_lists(gpt, nnt, st)
+
+        csv_dir = os.path.dirname(os.path.abspath(test_csv_path))
+        if csv_dir:
+            os.makedirs(csv_dir, exist_ok=True)
+
+        gp_costs_test = []
+        nn_costs_test = []
+        s_costs_test = []
+        if test_instances:
+            for instance in test_instances:
+                try:
+                    fe = VRPFeatureExtractor(instance)
+                    if bool_green:
+                        gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(
+                            instance, fe, func, bool_capacity
+                        )
+                    else:
+                        gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring_without_green(
+                            instance, fe, func, bool_capacity
+                        )
+                    gp_costs_test.append(VRP_PROBLEM_TYPE.compute_cost(instance, gp_routes))
+                except Exception:
+                    gp_costs_test.append(float("nan"))
+
+                try:
+                    nn_routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_capacity)
+                    nn_costs_test.append(VRP_PROBLEM_TYPE.compute_cost(instance, nn_routes))
+                except Exception:
+                    nn_costs_test.append(float("nan"))
+
+                try:
+                    s_routes = saving_heuristic2(instance, bool_capacity=bool_capacity)
+                    s_costs_test.append(VRP_PROBLEM_TYPE.compute_cost(instance, s_routes))
+                except Exception:
+                    s_costs_test.append(float("nan"))
+
+            _, _, _, _, pct_vs_nn, pct_vs_s = csv_metrics_from_cost_lists(
+                gp_costs_test, nn_costs_test, s_costs_test
+            )
+            if pct_vs_nn is not None:
+                test_impNN = pct_vs_nn
+            if pct_vs_s is not None:
+                test_impS = pct_vs_s
+
+        with open(test_csv_path, "w", encoding="utf-8") as f:
+            f.write(
+                "index,problem_type,bool_capacity,n_instances,"
+                "gp_avg_cost,nn_avg_cost,savings_avg_cost,pct_vs_nn,pct_vs_savings\n"
+            )
+            row_idx = 0
+            tn, tgp, tnn, ts, tpn, tps = csv_metrics_from_cost_lists(gpt, nnt, st)
+            f.write(
+                f"{row_idx},{problem_type},{bool_capacity},{tn},"
+                f"{tgp if not math.isnan(tgp) else ''},"
+                f"{tnn if not math.isnan(tnn) else ''},"
+                f"{ts if not math.isnan(ts) else ''},"
+                f"{tpn if tpn is not None else ''},"
+                f"{tps if tps is not None else ''}\n"
+            )
+            if test_instances:
+                row_idx = 1
+                n, gp_avg, nn_avg, s_avg, pct_vs_nn, pct_vs_s = csv_metrics_from_cost_lists(
+                    gp_costs_test, nn_costs_test, s_costs_test
+                )
+                f.write(
+                    f"{row_idx},{problem_type},{bool_capacity},{n},"
+                    f"{gp_avg if not math.isnan(gp_avg) else ''},"
+                    f"{nn_avg if not math.isnan(nn_avg) else ''},"
+                    f"{s_avg if not math.isnan(s_avg) else ''},"
+                    f"{pct_vs_nn if pct_vs_nn is not None else ''},"
+                    f"{pct_vs_s if pct_vs_s is not None else ''}\n"
+                )
+        print(
+            f"\nTrain/test aggregate summaries (test_experiment_res.py schema) written to {test_csv_path}"
+        )
+    else:
+        train_impNN, train_impS = evaluate_set("TRAINING", train_instances)
+        if test_instances:
+            test_impNN, test_impS = evaluate_set("TESTING", test_instances)
+
+    print(f"\n{'='*60}")
+    print("FINAL SUMMARY")
+    print(f"Training Avg Improvement (NN): {train_impNN:.2f}%")
+    print(f"Training Avg Improvement (Saving): {train_impS:.2f}%")
+    if test_csv_path:
+        t_nn = f"{train_agg_nn:.2f}%" if train_agg_nn is not None else "N/A"
+        t_s = f"{train_agg_s:.2f}%" if train_agg_s is not None else "N/A"
+        print(
+            f"Training (aggregate vs NN / Savings, matches CSV): {t_nn} / {t_s}"
+        )
+    if test_csv_path and test_instances:
+        print(f"Testing (aggregate vs NN / Savings, matches CSV): {test_impNN:.2f}% / {test_impS:.2f}%")
+    elif not test_csv_path:
+        print(f"Testing Avg Improvement (NN): {test_impNN:.2f}%")
+        print(f"Testing Avg Improvement (Saving): {test_impS:.2f}%")
+    elif test_csv_path and not test_instances:
+        print("Testing: (no held-out test set)")
+    print(f"{'='*60}")
+
+    return best_individual, logbook, pset
+
 
 def plot_route(instance, route, title=None, ax=None, fitness=None):
     coords = instance.coords
