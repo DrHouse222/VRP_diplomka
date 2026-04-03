@@ -43,6 +43,11 @@ def run_all_experiments(
     mutpb: float = 0.15,
     run_test_experiment_res: bool = True,
     max_eval_instances_per_variant: Optional[int] = None,
+    tournsize: int = 3,
+    min_initial: int = 2,
+    max_initial: int = 6,
+    min_mut: int = 0,
+    max_mut: int = 3,
 ) -> None:
     """
     Run GP experiments across all supported problem variants and capacity settings.
@@ -160,6 +165,11 @@ def run_all_experiments(
                             cxpb=cxpb,
                             mutpb=mutpb,
                             evaluate_test_split=False,
+                            tournsize=tournsize,
+                            min_initial=min_initial,
+                            max_initial=max_initial,
+                            min_mut=min_mut,
+                            max_mut=max_mut,
                         )
                         elapsed = time.time() - start
 
@@ -259,10 +269,11 @@ if __name__ == "__main__":
 
     # Keep existing defaults for the rest
     parser.add_argument("--output_path", type=str, default="experiment_results_test.jsonl")
-    parser.add_argument("--population_size", type=int, default=200)
-    parser.add_argument("--generations", type=int, default=200)
-    parser.add_argument("--time_limit_sec", type=float, default=10000)
+    parser.add_argument("--population_size", type=int, default=100)
+    parser.add_argument("--generations", type=int, default=100)
+    parser.add_argument("--time_limit_sec", type=float, default=20000)
     parser.add_argument("--base_seed", type=int, default=0)
+    parser.add_argument("--tournsize", type=int, default=3)
     parser.add_argument(
         "--no_eval",
         action="store_true",
@@ -274,6 +285,10 @@ if __name__ == "__main__":
         default=None,
         help="Optional cap on instances per variant in test_experiment_res pass.",
     )
+    parser.add_argument("--min_initial", type=int, default=2, help="Minimum initial size of the expression.")
+    parser.add_argument("--max_initial", type=int, default=6, help="Maximum initial size of the expression.")
+    parser.add_argument("--min_mut", type=int, default=0, help="Minimum mutation size of the expression.")
+    parser.add_argument("--max_mut", type=int, default=3, help="Maximum mutation size of the expression.")
 
     args = parser.parse_args()
 
@@ -289,7 +304,12 @@ if __name__ == "__main__":
         base_seed=args.base_seed,
         cxpb=args.cxpb,
         mutpb=args.mutpb,
+        tournsize=args.tournsize,
         run_test_experiment_res=not args.no_eval,
         max_eval_instances_per_variant=args.eval_max_instances,
+        min_initial=args.min_initial,
+        max_initial=args.max_initial,
+        min_mut=args.min_mut,
+        max_mut=args.max_mut,
     )
     print(f"Finished GP VRP experiments at {datetime.datetime.now().isoformat()}")

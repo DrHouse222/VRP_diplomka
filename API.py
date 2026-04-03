@@ -1,15 +1,18 @@
 import requests
 import json
+import os
+import argparse
 from typing import List, Dict, Any
 
 from problem_types import VRP_PROBLEM_TYPE
 
 # Short human-readable descriptions for each feature name
 FEATURE_DESCRIPTIONS: Dict[str, str] = {
-    # Core spatial / demand features
+    # Core spatial
     "dist_to_depot": "distance from (route) depot to candidate customer",
     "dist_from_current": "distance from current node to candidate customer",
     "savings": "Clarke-Wright style savings for inserting candidate",
+    # Capacity features
     "demand": "demand of candidate customer",
     "remaining_capacity": "remaining vehicle capacity before adding candidate",
     "load_percentage": "current load divided by vehicle capacity",
@@ -35,10 +38,6 @@ FEATURE_DESCRIPTIONS: Dict[str, str] = {
 def generate_vrp_heuristic(features_list, variant_description, api_key):
     """
     Use OpenRouter API to generate a VRP heuristic function.
-    
-    Args:
-        strategy_description: What strategy to use (e.g., "greedy nearest neighbor")
-        api_key: Your OpenRouter API key
     """
     
     prompt = f"""You are an expert in vehicle routing problems (VRP).
@@ -81,11 +80,50 @@ Create a scoring function for selecting the next customer in a VRP route constru
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.7
-        }
+        },
+        timeout=120,
     )
-    
-    result = response.json()
-    function_code = result['choices'][0]['message']['content']
+
+    try:
+        result = response.json()
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"OpenRouter returned non-JSON (HTTP {response.status_code}): "
+            f"{response.text[:500]!r}"
+        ) from e
+
+    if response.status_code >= 400:
+        err = result.get("error") if isinstance(result, dict) else None
+        if isinstance(err, dict):
+            msg = err.get("message", err)
+        else:
+            msg = err or result
+        raise RuntimeError(
+            f"OpenRouter HTTP {response.status_code}: {msg}\n"
+            f"Full body (truncated): {str(result)[:800]}"
+        )
+
+    if isinstance(result, dict) and result.get("error"):
+        err = result["error"]
+        msg = err.get("message", err) if isinstance(err, dict) else err
+        raise RuntimeError(
+            f"OpenRouter error field (HTTP {response.status_code}): {msg}\n"
+            f"Body (truncated): {str(result)[:800]}"
+        )
+
+    choices = result.get("choices")
+    if not choices:
+        raise RuntimeError(
+            "OpenRouter response has no 'choices' (request likely failed). "
+            f"Body: {str(result)[:800]}"
+        )
+
+    msg = choices[0].get("message") or {}
+    function_code = msg.get("content")
+    if not function_code:
+        raise RuntimeError(
+            f"Empty model content in response: {str(result)[:800]}"
+        )
     
     # Extract just the function (remove markdown if present)
     if "```python" in function_code:
@@ -129,7 +167,7 @@ def get_features_for_variant(
     return features
 
 
-def generate_all_vrp_heuristics(api_key: str) -> List[Dict[str, Any]]:
+def generate_all_vrp_heuristics(api_key: str, n_per_variant: int = 30) -> List[Dict[str, Any]]:
     """
     Call generate_vrp_heuristic 16 times, once for each (capacity, TW, green, MD)
     VRP variant used in our experiments.
@@ -189,7 +227,7 @@ def generate_all_vrp_heuristics(api_key: str) -> List[Dict[str, Any]]:
                     )
 
 
-                    for i in range(30):
+                    for _ in range(n_per_variant):
                         code = generate_vrp_heuristic(features_str, variant_description, api_key)
 
                         results.append(
@@ -205,6 +243,40 @@ def generate_all_vrp_heuristics(api_key: str) -> List[Dict[str, Any]]:
 
     return results
 
-results = generate_all_vrp_heuristics(api_key="")
-with open("generated_heuristics.json", "w", encoding="utf-8") as f:
-    json.dump(results, f, indent=2)
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate VRP heuristics via OpenRouter.")
+    parser.add_argument(
+        "--n_per_variant",
+        type=int,
+        default=20,
+        help="How many responses to generate for each variant.",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="generated_heuristics.json",
+        help="Output JSON path.",
+    )
+    parser.add_argument(
+        "--api_key",
+        type=str,
+        default=None,
+        help="OpenRouter API key. If omitted, reads OPENROUTER_API_KEY env var.",
+    )
+    args = parser.parse_args()
+
+    api_key = args.api_key or os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        raise SystemExit(
+            "Missing API key. Pass --api_key or set OPENROUTER_API_KEY environment variable."
+        )
+
+    results = generate_all_vrp_heuristics(api_key=api_key, n_per_variant=args.n_per_variant)
+    with open(args.output, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+    print(f"Wrote {len(results)} heuristics to {args.output}")
+
+
+if __name__ == "__main__":
+    main()

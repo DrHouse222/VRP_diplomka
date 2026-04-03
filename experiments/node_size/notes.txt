@@ -1,0 +1,114 @@
+conda env create -f environment.yml
+conda activate gpgomenv
+make
+pip install "numpy<2.0.0"
+pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
+
+
+ulimit -t unlimited
+ulimit -t unlimited && nohup nice python3 test_experiment_res.py experiments &
+nohup nice python run_experiments.py --n_train 5 --n_test -1 --cxpb 1.0 --mutpb 0.2 --output_path experiment_res.jsonl &
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --n_test -1 --cxpb 1.0 --mutpb 0.2 --output_path exp_test.jsonl > experiment.log 2>&1 &
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --n_test -1 --cxpb 1.0 --mutpb 0.2 --population_size 100 --generations 100 --time_limit_sec 25000 --output_path exp_c_m_1.jsonl > experiment.log 2>&1 &
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --tournsize 5 --output_path exp_t5_1.jsonl > experiment_t5.log 2>&1 &
+scp -r xcerve30@edesign1.fit.vutbr.cz:~/DIP/VRP_diplomka/experiments ~/vut/DIP/VRP_diplomka/experiments
+scp run_experiments.py  xcerve30@edesign1.fit.vutbr.cz:~/DIP/VRP_diplomka/
+ps ux | grep run_experiments.py
+ps ux | grep test_experiment_res.py
+ssh xcerve30@edesign1.fit.vutbr.cz
+ssh xcerve30@edesign2.fit.vutbr.cz
+ssh xcerve30@edesign3.fit.vutbr.cz
+ssh xcerve30@edesign4.fit.vutbr.cz
+
+A 2-6 0-1
+B 1-4 0-1
+C 1-4 1-5
+D 3-8 0-1
+E 3-8 1-5
+F 2-6 1-5
+G 2-6 0-3
+H 1-4 0-3
+I 3-8 0-3
+
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_1.jsonl > log_train1_1.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_2.jsonl > log_train1_2.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_3.jsonl > log_train1_3.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_4.jsonl > log_train1_4.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_5.jsonl > log_train1_5.log 2>&1 &
+
+
+generate me commands like this one five for each: ulimit -t unlimited && nohup nice python3 -u run_experiments.py --min_initial 2 --max_initial 6 --min_mut 0 --max_mut 1 --output_path exp_ini26_mut01_1.jsonl > experiment_ini26_mut01.log 2>&1 &
+
+
+Eni Energy required to visit n i
+Tvk Current time of vk
+DDni Due date of n i
+RTni Ready time of n i
+
+
+Dni Demand of n i
+DDni Due date of n i
+STni Service Time of n i
+RTni Ready time of n i
+Evk Remaining energy of vk
+Cvk Remaining capacity of vk
+
+ECni Energy required to visit the centroid from n i
+ERPni Energy required to visit the nearest charging station from ni
+EDepni Energy required to visit the depot from n i
+ERPpvk Energy required to visit the nearest charging station from pvk
+EDeppvk Energy required to visit the depot from pk
+vk is the active vehicle, pvk is the actual position of vk and n i is the destination of vk
+
+nejcasteji Eni, Tvk, Ddni, Rtni
+oni tam nemaji ty random cisla
+
+
+Functions
++ Addition
+- Subtraction
+* Multiplication
+p/ Protected Division
+max min
+
+Initialisation Ramped half-and-half
+Population size 200
+Crossover operator Subtree
+Crossover probability 100%
+Mutation operator Subtree
+Mutation probability 20%
+Maximum tree depth 2 8 − 1
+Termination criterion 100 minutes
+Alphabet Full, Partia
+
+Terminals
+D Travel distance
+T Travel time
+RT Return time to the depot
+AVGT Average time from remaining nonserved customers
+to the considered customer
+AVGTL Average time from remaining nonserved customers
+to the last customer added to the route
+C Extra cost of serving the considered customer
+CR Critical Ratio
+RTT Route total time
+NRTT Route total time after adding the consider customer
+
+
+
+functions: +, -, *, /, min, max
+
+D Travel distance x x x
+T Travel time x x x
+S Slack time x x x
+ST Service time x x
+RT Return time to the depot x x
+RC Vehicle’s remain capacity x x
+Q Demand x x
+AVGT Average time from remaining nonserved customers to the considered customer x x
+AVGTL Average time from remaining nonserved customers to the last customer added to the route x x
+C Extra cost of serving the considered customer x
+CR Critical Ratio x
+RTT Route total time x
+NRTT Route total time after adding the consider customer x
+U Route utilization x

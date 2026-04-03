@@ -16,12 +16,12 @@ import glob
 import os
 import operator
 
-def create_individual(pset):
+def create_individual(pset, min_initial=2, max_initial=6):
     """Create a GP individual."""
-    return gp.PrimitiveTree(gp.genHalfAndHalf(pset, min_=2, max_=6))
+    return gp.PrimitiveTree(gp.genHalfAndHalf(pset, min_=min_initial, max_=max_initial))
 
 
-def create_toolbox():
+def create_toolbox(min_initial=2, max_initial=6):
     """Create the DEAP toolbox"""
     pset = VRP_PROBLEM_TYPE.create_primitive_set(gp)
     
@@ -32,7 +32,7 @@ def create_toolbox():
         creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
     
     toolbox = base.Toolbox()
-    toolbox.register("expr", create_individual, pset)
+    toolbox.register("expr", create_individual, pset, min_initial=min_initial, max_initial=max_initial)
     toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.expr)
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     toolbox.register("compile", gp.compile, pset=pset)
@@ -76,6 +76,11 @@ def run_genetic_programming(
     cxpb: float = 1.0,
     mutpb: float = 0.2,
     bool_green: bool = True,
+    tournsize: int = 3,
+    min_initial=2,
+    max_initial=6,
+    min_mut=0,
+    max_mut=3,
 ):
     """Run genetic programming to evolve VRP scoring function."""
     
@@ -86,7 +91,7 @@ def run_genetic_programming(
         np.random.seed(seed)
 
     # Create toolbox
-    toolbox, pset = create_toolbox()
+    toolbox, pset = create_toolbox(min_initial=min_initial, max_initial=max_initial)
     
     # Create evaluation function
     def evaluate_with_problem_type(individual):
@@ -94,9 +99,9 @@ def run_genetic_programming(
     
     # Register evaluation function
     toolbox.register("evaluate", evaluate_with_problem_type)
-    toolbox.register("select", tools.selTournament, tournsize=3) #maybe change to 5
+    toolbox.register("select", tools.selTournament, tournsize=tournsize)
     toolbox.register("mate", gp.cxOnePoint)
-    toolbox.register("expr_mut", gp.genHalfAndHalf, min_=0, max_=3)
+    toolbox.register("expr_mut", gp.genHalfAndHalf, min_=min_mut, max_=max_mut)
     toolbox.register("mutate", gp.mutUniform, expr=toolbox.expr_mut, pset=pset)
 
     toolbox.decorate("mate", gp.staticLimit(key=operator.attrgetter("height"), max_value=10))
@@ -196,6 +201,11 @@ def train_and_test_problem_type(
     mutpb: float = 0.15,
     bool_green: bool = True,
     evaluate_test_split: bool = True,
+    tournsize: int = 3,
+    min_initial: int = 2,
+    max_initial: int = 6,
+    min_mut: int = 0,
+    max_mut: int = 3,
 ):
     """
     Train on 'n_train' instances, optionally evaluate on a held-out test split.
@@ -250,6 +260,11 @@ def train_and_test_problem_type(
         cxpb=cxpb,
         mutpb=mutpb,
         bool_green=bool_green,
+        tournsize=tournsize,
+        min_initial=min_initial,
+        max_initial=max_initial,
+        min_mut=min_mut,
+        max_mut=max_mut,
     )
     
     # Get the evolved function
@@ -601,7 +616,7 @@ def main():
             population_size=1,
             generations=1,
             cxpb=1.0,
-            mutpb=0.2
+            mutpb=0.2,
         )
     else:
         print(f"No instances loaded for {problem_type}")
