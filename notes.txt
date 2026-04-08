@@ -20,21 +20,42 @@ ssh xcerve30@edesign2.fit.vutbr.cz
 ssh xcerve30@edesign3.fit.vutbr.cz
 ssh xcerve30@edesign4.fit.vutbr.cz
 
+
 A 2-6 0-1
 B 1-4 0-1
-C 1-4 1-5
 D 3-8 0-1
-E 3-8 1-5
 F 2-6 1-5
+C 1-4 1-5
+E 3-8 1-5
 G 2-6 0-3
 H 1-4 0-3
 I 3-8 0-3
+
+
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 70 --generations 70 --output_path exp_train10_1.jsonl > log_train10_1.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 70 --generations 70 --output_path exp_train10_2.jsonl > log_train10_2.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 70 --generations 70 --output_path exp_train10_3.jsonl > log_train10_3.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 70 --generations 70 --output_path exp_train10_4.jsonl > log_train10_4.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 70 --generations 70 --output_path exp_train10_5.jsonl > log_train10_5.log 2>&1 &
+
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 3 --time_limit_sec 20000 --population_size 129 --generations 129 --output_path exp_train3_1.jsonl > log_train3_1.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 3 --time_limit_sec 20000 --population_size 129 --generations 129 --output_path exp_train3_2.jsonl > log_train3_2.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 3 --time_limit_sec 20000 --population_size 129 --generations 129 --output_path exp_train3_3.jsonl > log_train3_3.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 3 --time_limit_sec 20000 --population_size 129 --generations 129 --output_path exp_train3_4.jsonl > log_train3_4.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 3 --time_limit_sec 20000 --population_size 129 --generations 129 --output_path exp_train3_5.jsonl > log_train3_5.log 2>&1 &
 
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_1.jsonl > log_train1_1.log 2>&1 & \
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_2.jsonl > log_train1_2.log 2>&1 & \
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_3.jsonl > log_train1_3.log 2>&1 & \
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_4.jsonl > log_train1_4.log 2>&1 & \
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 1 --time_limit_sec 20000 --population_size 223 --generations 223 --output_path exp_train1_5.jsonl > log_train1_5.log 2>&1 &
+
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_train5_1.jsonl > log_train5_1.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_train5_2.jsonl > log_train5_2.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_train5_3.jsonl > log_train5_3.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_train5_4.jsonl > log_train5_4.log 2>&1 & \
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 5 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_train5_5.jsonl > log_train5_5.log 2>&1 &
+
 
 
 generate me commands like this one five for each: ulimit -t unlimited && nohup nice python3 -u run_experiments.py --min_initial 2 --max_initial 6 --min_mut 0 --max_mut 1 --output_path exp_ini26_mut01_1.jsonl > experiment_ini26_mut01.log 2>&1 &

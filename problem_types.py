@@ -24,20 +24,21 @@ class VRPProblemType:
     def __init__(self):
         # Base features (always available)
         self.base_feature_names = [
-            'dist_to_depot', 'dist_from_current', 'demand', 'remaining_capacity', 'savings',
-            'route_urgency', 'travel_time', 'travel_distance',
-            'depot_relative_workload', 'depot_distance_advantage', 'depot_rank'
+            'dist_to_depot', 'dist_from_current', 'demand', 'remaining_capacity', 'load_percentage',
+            'savings', 'route_urgency',
+            'depot_distance_advantage', 'depot_rank'
         ]
     
         # Time window features (only for VRPTW)
         self.tw_feature_names = [
-            'arrival_time', 'due_time', 'wait_time', 'tw_feasible', 'slack_to_due'
+            'current_time', 'arrival_time', 'ready_time', 'due_time',
+            'wait_time', 'slack_to_due'
         ]
         
         # GVRP battery features (only for GVRP)
         self.gvrp_feature_names = [
-            'current_battery', 'battery_percentage', 'energy_to_customer', 'is_directly_reachable',
-            'dist_to_nearest_charger', 'battery_safety_margin'
+            'current_battery', 'battery_percentage', 'energy_to_customer',
+            'dist_to_nearest_charger'
         ]
     
     @property
@@ -67,7 +68,7 @@ class VRPProblemType:
     
     @property
     def num_features(self) -> int:
-        """Return maximum number of features (15 total: 5 base + 5 TW + 5 GVRP)."""
+        """Return total number of features available to the GP primitive set."""
         return len(self.base_feature_names) + len(self.tw_feature_names) + len(self.gvrp_feature_names)
     
     def extract_feature_values(self, features: Dict[str, float]) -> List[float]:
@@ -267,12 +268,6 @@ class VRPProblemType:
                             route_depot=candidate_depot,
                             bool_capacity=bool_capacity,
                         )
-                        if is_multi_depot:
-                            total_started = sum(depot_route_counts.values()) or 1
-                            rel_workload = depot_route_counts.get(candidate_depot, 0) / total_started
-                        else:
-                            rel_workload = 0.0
-                        features["depot_relative_workload"] = rel_workload
                         features["dist_from_current"] = dist_direct
                         features["savings"] = (
                             features.get("dist_to_depot", 0.0)
@@ -404,12 +399,6 @@ class VRPProblemType:
                         + features.get("dist_to_depot_from_request", 0.0)
                         - dist_direct
                     )
-                    if is_multi_depot:
-                        rel_workload = depot_route_counts.get(route_start_depot, 0) / max(
-                            1, total_routes_started
-                        )
-                        features["depot_relative_workload"] = rel_workload
-
                     if bool_capacity:
                         features["remaining_capacity"] = max_capacity - (load + demand)
                     else:
@@ -481,7 +470,7 @@ class VRPProblemType:
         else:
             depots_list = [depot]
 
-        # Track how many routes each depot starts (for depot_relative_workload)
+        # Track how many routes each depot starts
         depot_route_counts = {d: 0 for d in depots_list}
         total_routes_started = 0
 
@@ -634,13 +623,6 @@ class VRPProblemType:
                             route_depot=candidate_depot,
                             bool_capacity=bool_capacity,
                         )
-                        # Depot-relative workload for this candidate depot:
-                        if is_multi_depot:
-                            total_started = sum(depot_route_counts.values()) or 1
-                            rel_workload = depot_route_counts.get(candidate_depot, 0) / total_started
-                        else:
-                            rel_workload = 0.0
-                        features["depot_relative_workload"] = rel_workload
                         features['dist_from_current'] = dist_direct
                         features['savings'] = (
                             features.get('dist_to_depot', 0.0) +
@@ -744,12 +726,6 @@ class VRPProblemType:
                                 route_depot=candidate_depot,
                                 bool_capacity=bool_capacity,
                             )
-                            if is_multi_depot:
-                                total_started = sum(depot_route_counts.values()) or 1
-                                rel_workload = depot_route_counts.get(candidate_depot, 0) / total_started
-                            else:
-                                rel_workload = 0.0
-                            features["depot_relative_workload"] = rel_workload
                             features["dist_from_current"] = best_via_station_dist
                             features["savings"] = (
                                 features.get("dist_to_depot", 0.0)
@@ -1049,10 +1025,6 @@ class VRPProblemType:
                         features.get('dist_to_depot_from_request', 0.0) -
                         actual_dist
                     )
-                    if is_multi_depot:
-                        rel_workload = depot_route_counts.get(route_start_depot, 0) / max(1, total_routes_started)
-                        features["depot_relative_workload"] = rel_workload
-
                     if bool_capacity:
                         features["remaining_capacity"] = max_capacity - (load + demand)
                     else:
