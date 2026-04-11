@@ -24,7 +24,7 @@ class VRPProblemType:
     def __init__(self):
         # Base features (always available)
         self.base_feature_names = [
-            'dist_to_depot', 'dist_from_current', 'demand', 'remaining_capacity', 'load_percentage',
+            'dist_to_depot', 'dist_from_current', 'demand', 'remaining_capacity',
             'savings', 'route_urgency',
             'depot_distance_advantage', 'depot_rank'
         ]
@@ -32,13 +32,12 @@ class VRPProblemType:
         # Time window features (only for VRPTW)
         self.tw_feature_names = [
             'current_time', 'arrival_time', 'ready_time', 'due_time',
-            'wait_time', 'slack_to_due'
+            'wait_time'
         ]
         
         # GVRP battery features (only for GVRP)
         self.gvrp_feature_names = [
-            'current_battery', 'battery_percentage', 'energy_to_customer',
-            'dist_to_nearest_charger'
+            'current_battery', 'energy_to_customer'
         ]
     
     @property
