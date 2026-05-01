@@ -178,44 +178,44 @@ def main() -> None:
         "--out",
         type=Path,
         default=None,
-        help="Output PNG path (default: <exp_dir>/figures/train10_token_hist.png)",
+        help="Output PDF path (default: <exp_dir>/figures/train10_token_hist.pdf)",
     )
     parser.add_argument(
         "--out_terminals",
         type=Path,
         default=None,
-        help="Optional output path for terminals-only histogram (default: <exp_dir>/figures/train10_terminals_hist.png)",
+        help="Optional output path for terminals-only histogram (default: <exp_dir>/figures/train10_terminals_hist.pdf)",
     )
     parser.add_argument(
         "--out_functions_all",
         type=Path,
         default=None,
-        help="Optional output path for all-files function histogram (default: <exp_dir>/figures/train_all_functions_hist.png)",
+        help="Optional output path for all-files function histogram (default: <exp_dir>/figures/train_all_functions_hist.pdf)",
     )
     parser.add_argument(
         "--out_terminals_all",
         type=Path,
         default=None,
-        help="Optional output path for all-files terminal histogram (default: <exp_dir>/figures/train_all_terminals_hist.png)",
+        help="Optional output path for all-files terminal histogram (default: <exp_dir>/figures/train_all_terminals_hist.pdf)",
     )
     parser.add_argument(
         "--out_all_combined",
         type=Path,
         default=None,
-        help="Optional output path for all-files combined histogram (default: <exp_dir>/figures/train_all_token_hist.png)",
+        help="Optional output path for all-files combined histogram (default: <exp_dir>/figures/train_all_token_hist.pdf)",
     )
     parser.add_argument("--top_n", type=int, default=20, help="Top N tokens shown in each subplot")
     args = parser.parse_args()
 
-    out = args.out or (args.exp_dir / "figures" / "train10_token_hist.png")
+    out = args.out or (args.exp_dir / "figures" / "train10_token_hist.pdf")
     run(args.exp_dir, out, args.top_n)
-    out_t = args.out_terminals or (args.exp_dir / "figures" / "train10_terminals_hist.png")
+    out_t = args.out_terminals or (args.exp_dir / "figures" / "train10_terminals_hist.pdf")
     run_terminals_only(args.exp_dir, out_t, args.top_n)
-    out_fa = args.out_functions_all or (args.exp_dir / "figures" / "train_all_functions_hist.png")
+    out_fa = args.out_functions_all or (args.exp_dir / "figures" / "train_all_functions_hist.pdf")
     run_functions_all_files(args.exp_dir, out_fa, args.top_n)
-    out_ta = args.out_terminals_all or (args.exp_dir / "figures" / "train_all_terminals_hist.png")
+    out_ta = args.out_terminals_all or (args.exp_dir / "figures" / "train_all_terminals_hist.pdf")
     run_terminals_all_files(args.exp_dir, out_ta, args.top_n)
-    out_ca = args.out_all_combined or (args.exp_dir / "figures" / "train_all_token_hist.png")
+    out_ca = args.out_all_combined or (args.exp_dir / "figures" / "train_all_token_hist.pdf")
     run_all_files_combined(args.exp_dir, out_ca, args.top_n)
 
 

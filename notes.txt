@@ -1,10 +1,3 @@
-conda env create -f environment.yml
-conda activate gpgomenv
-make
-pip install "numpy<2.0.0"
-pip install "numpy>=1.24,<2" "scipy<2" "scikit-learn<2" --force-reinstall
-
-
 ulimit -t unlimited
 ulimit -t unlimited && nohup nice python3 test_experiment_res.py experiments &
 nohup nice python run_experiments.py --n_train 5 --n_test -1 --cxpb 1.0 --mutpb 0.2 --output_path experiment_res.jsonl &
@@ -39,14 +32,7 @@ ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --t
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_Ultra_2.jsonl > log_Ultra_2.log 2>&1 & \
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_Ultra_3.jsonl > log_Ultra_3.log 2>&1 & \
 ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_Ultra_4.jsonl > log_Ultra_4.log 2>&1 & \
-ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_Ultra_5.jsonl > log_Ultra_5.log 2>&1 &
-
-
-ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 200 --generations 50 --output_path exp_Ultra2_1.jsonl > log_Ultra2_1.log 2>&1 & \
-ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 200 --generations 50 --output_path exp_Ultra2_2.jsonl > log_Ultra2_2.log 2>&1 & \
-ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 200 --generations 50 --output_path exp_Ultra2_3.jsonl > log_Ultra2_3.log 2>&1 & \
-ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 200 --generations 50 --output_path exp_Ultra2_4.jsonl > log_Ultra2_4.log 2>&1 & \
-ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 200 --generations 50 --output_path exp_Ultra2_5.jsonl > log_Ultra2_5.log 2>&1 &
+ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --time_limit_sec 20000 --population_size 100 --generations 100 --output_path exp_Ultra_5.jsonl > log_Ultra_5.log 2>&1 & 
 
 
 2026-04-07T11:29:10.807827  2026-04-08T09:59:04.553906 22.5
@@ -55,9 +41,6 @@ ulimit -t unlimited && nohup nice python3 -u run_experiments.py --n_train 10 --t
 
 2026-04-07T11:28:43.681402  2026-04-08T04:13:40.178217 17
 2026-04-07T11:28:43.681489  2026-04-08T04:46:10.698221 17
-
-
-generate me commands like this one five for each: ulimit -t unlimited && nohup nice python3 -u run_experiments.py --min_initial 2 --max_initial 6 --min_mut 0 --max_mut 1 --output_path exp_ini26_mut01_1.jsonl > experiment_ini26_mut01.log 2>&1 &
 
 
 Eni Energy required to visit n i

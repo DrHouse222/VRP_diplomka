@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import os
 import re
 import sys
 from pathlib import Path
@@ -148,7 +149,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    cvrp, vrptw, _gvrp, mdvrp, mdvrptw = load_instances_by_type()
+    old_cwd = os.getcwd()
+    os.chdir(_REPO_ROOT)
+    try:
+        cvrp, vrptw, _gvrp, mdvrp, mdvrptw = load_instances_by_type()
+    finally:
+        os.chdir(old_cwd)
     inst_by_key: dict[tuple[bool, bool, bool], list[Any]] = {
         (False, False, False): cvrp,
         (True, False, False): vrptw,

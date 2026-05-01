@@ -1,17 +1,22 @@
-# nn_heuristic.py
+"""
+Baseline routing heuristics for VRP variants.
+
+Implements nearest-neighbor and Clarke-Wright savings style constructors with
+support for capacity constraints, time windows, battery constraints, and
+multi-depot variants used in this project.
+"""
+
 import numpy as np
 import os
 import glob
 import csv
 import json
 from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance
-from problem_types import VRP_PROBLEM_TYPE
-from data_generation import convert_vrptw_to_gvrptw
+from vrp_problem import VRP_PROBLEM_TYPE
 from typing import List, Tuple, Optional
 
 
-from parser import VRPFeatureExtractor
-from problem_types import VRP_PROBLEM_TYPE
+from vrp_feature_extractor import VRPFeatureExtractor
 
 def nearest_neighbor_heuristic(instance, bool_capacity=True):
     """
@@ -21,7 +26,6 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
     the nearest feasible customer. No force-adding of customers; any
     unserved customers are penalized via compute_cost.
     """
-    # Find index of dist_from_current in the unified feature vector
     try:
         idx = VRP_PROBLEM_TYPE.feature_names.index("dist_from_current")
     except ValueError:
@@ -30,22 +34,14 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
     def nn_scoring_func(*feature_values):
         return float(feature_values[idx])
 
-    has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
     feature_extractor = VRPFeatureExtractor(instance)
 
-    if has_battery:
-        # Full green VRP logic (stations, battery, etc.)
-        return VRP_PROBLEM_TYPE.solve_with_scoring(
-            instance, feature_extractor, nn_scoring_func, bool_capacity
-        )
-    else:
-        # Non-green version that ignores battery logic
-        return VRP_PROBLEM_TYPE.solve_with_scoring_without_green(
-            instance, feature_extractor, nn_scoring_func, bool_capacity
-        )
+    return VRP_PROBLEM_TYPE.solve_with_scoring(
+        instance, feature_extractor, nn_scoring_func, bool_capacity
+    )
 
 
-def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
+def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
     """
     Construct GVRP routes using Clarke-Wright Savings Heuristic with Battery-Aware Savings.
     Handles:
@@ -55,7 +51,7 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
       - Automatic Charging Station Insertion
       - Multi-depot: each customer assigned to nearest feasible depot; only merge routes sharing same depot.
     
-    Uses ACTUAL route costs (with charging stations) instead of theoretical savings.
+    Uses route costs with charging stations
     """
     n = instance.dimension
     depot = getattr(instance, "depot", 0)
@@ -68,7 +64,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
     else:
         max_capacity = float('inf')
     
-    # --- GREEN VRP SETUP ---
     has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
     battery_cap = getattr(instance, "battery_capacity", float('inf'))
     energy_per_dist = getattr(instance, "energy_consumption", 1.0)
@@ -82,13 +77,11 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         energy_needed = battery_cap - current_batt
         return charge_rate * energy_needed
     
-    # Identify Charging Stations
     node_types = getattr(instance, "node_types", None)
     stations = []
     if node_types is not None:
         stations = [i for i in range(n) if node_types[i] == 2]
     
-    # ==================== PREPROCESSING ====================
     station_distances = {}
     nearest_station_idx = {}
     dist_to_nearest_charger = {}
@@ -125,14 +118,12 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         has_max_travel_time = False
         max_travel_time = float('inf')
     
-    # Get customers only (exclude all depots and charging stations)
     customers = []
     if node_types is not None:
         customers = [i for i in range(n) if node_types[i] == 1]
     else:
         customers = [i for i in range(n) if i not in depots_list]
     
-    # Multi-depot: assign each customer to nearest feasible depot
     customer_to_depot = {}
     for c in customers:
         if is_multi_depot:
@@ -155,7 +146,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         else:
             customer_to_depot[c] = depot
     
-    # ==================== HELPER FUNCTIONS ====================
     
     def calculate_route_distance(route: List[int]) -> float:
         """Calculate total distance of a route."""
@@ -169,7 +159,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         Check if we can travel from cust_from to cust_to (with charging if needed).
         Returns: (is_feasible, route_segment, arrival_time, battery_after)
         """
-        # Try direct connection
         dist_direct = instance.dist_matrix[cust_from, cust_to]
         energy_direct = dist_direct * energy_per_dist
         
@@ -181,10 +170,8 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
                 arrival = current_time + dist_direct
                 
                 if not has_tw or arrival <= instance.due_dates[cust_to]:
-                    # Direct connection works
                     return True, [cust_to], arrival, batt_after
         
-        # Try via charging station
         if has_battery:
             stations_from_current = set(k_nearest_stations.get(cust_from, []))
             stations_near_dest = set(k_nearest_stations.get(cust_to, []))
@@ -250,16 +237,13 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         current_node = route_depot
         final_route = [route_depot]
         
-        # Process customers (skip first depot, last depot)
         for i in range(1, len(route_nodes) - 1):
             customer = route_nodes[i]
             demand = instance.demands[customer]
             
-            # Capacity check
             if load + demand > max_capacity:
                 return False, None
             
-            # Try to reach customer
             feasible, segment, arrival, batt_after = can_connect_customers(
                 current_node, customer, current_time, current_battery
             )
@@ -267,11 +251,9 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
             if not feasible:
                 return False, None
             
-            # Add segment (might include charging station)
             for node in segment:
                 final_route.append(node)
                 if node in stations:
-                    # Update for charging
                     dist_to_station = instance.dist_matrix[current_node, node]
                     current_battery -= dist_to_station * energy_per_dist
                     current_time += dist_to_station
@@ -280,7 +262,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
                     current_time += charge_time
                     current_node = node
             
-            # Now at customer
             load += demand
             
             if has_tw:
@@ -294,12 +275,10 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
             current_battery = batt_after
             current_node = customer
         
-        # Return to depot
         dist_to_depot = instance.dist_matrix[current_node, route_depot]
         energy_needed = dist_to_depot * energy_per_dist
         
         if current_battery >= energy_needed:
-            # Direct return
             arrival_depot = current_time + dist_to_depot
             
             tw_ok = not has_tw or arrival_depot <= instance.due_dates[route_depot]
@@ -309,7 +288,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
                 final_route.append(route_depot)
                 return True, final_route
         
-        # Try via charging station
         if has_battery:
             stations_from_current = set(k_nearest_stations.get(current_node, []))
             stations_near_depot = set(k_nearest_stations.get(route_depot, []))
@@ -359,7 +337,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         Returns:
             Positive float if merging saves distance, negative if it increases distance
         """
-        # Cost of two separate routes
         route_i = [route_depot, cust_i, route_depot]
         route_j = [route_depot, cust_j, route_depot]
         
@@ -371,7 +348,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         
         cost_separate = cost_i + cost_j
         
-        # Cost of merged route (try both orders)
         merge_orders = [
             [route_depot, cust_i, cust_j, route_depot],
             [route_depot, cust_j, cust_i, route_depot]
@@ -380,7 +356,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         best_merged_cost = float('inf')
         
         for test_route in merge_orders:
-            # Quick capacity check before expensive validation
             total_demand = instance.demands[cust_i] + instance.demands[cust_j]
             if total_demand > max_capacity:
                 continue
@@ -391,13 +366,10 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         if best_merged_cost == float('inf'):
             return -float('inf')  # Infeasible merge
         
-        # Actual savings: how much distance we save by merging
         actual_savings = cost_separate - best_merged_cost
         
         return actual_savings
     
-    # ==================== STEP 1: CREATE INITIAL ROUTES ====================
-    # Each customer starts in its own route: assigned_depot -> customer -> assigned_depot
     routes = {}  # route_id -> {route: [nodes], load: float, customers: set, depot: int}
     route_id_counter = 0
     customer_to_route = {}  # customer -> route_id
@@ -413,7 +385,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         customer_to_route[customer] = route_id_counter
         route_id_counter += 1
     
-    # ==================== STEP 2: CALCULATE BATTERY-AWARE ACTUAL SAVINGS ====================
     savings = []
     
     for i in range(len(customers)):
@@ -421,70 +392,57 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
             cust_i = customers[i]
             cust_j = customers[j]
             
-            # Only merge routes that share the same depot
             if customer_to_depot[cust_i] != customer_to_depot[cust_j]:
                 continue
             
             route_depot = customer_to_depot[cust_i]
             
-            # Calculate ACTUAL savings (accounts for charging stations)
             actual_saving = calculate_actual_savings(cust_i, cust_j, route_depot)
             
-            # Only include positive savings
             if actual_saving > 0:
                 savings.append({
                     'customers': (cust_i, cust_j),
                     'saving': actual_saving
                 })
     
-    # Sort savings in descending order (highest savings first)
     savings.sort(key=lambda x: x['saving'], reverse=True)
     
     
-    # ==================== STEP 3: MERGE ROUTES ====================
     
-    # Process savings
     merges_attempted = 0
     merges_successful = 0
     
     for saving_entry in savings:
         cust_i, cust_j = saving_entry['customers']
         
-        # Skip if already in same route
         if customer_to_route[cust_i] == customer_to_route[cust_j]:
             continue
         
         route_i_id = customer_to_route[cust_i]
         route_j_id = customer_to_route[cust_j]
         
-        # Check routes still exist (might have been deleted in earlier merge)
         if route_i_id not in routes or route_j_id not in routes:
             continue
         
         route_i = routes[route_i_id]
         route_j = routes[route_j_id]
         
-        # Only merge routes that share the same depot
         if route_i['depot'] != route_j['depot']:
             continue
         
         depot_ij = route_i['depot']
         
-        # Get route without depot markers
         route_i_customers = [c for c in route_i['route'] if c != depot_ij and c not in stations]
         route_j_customers = [c for c in route_j['route'] if c != depot_ij and c not in stations]
         
-        # Check if customers are at route ends (required for Clarke-Wright)
         i_is_first = (route_i_customers[0] == cust_i)
         i_is_last = (route_i_customers[-1] == cust_i)
         j_is_first = (route_j_customers[0] == cust_j)
         j_is_last = (route_j_customers[-1] == cust_j)
         
-        # Can only merge if they're at ends
         if not ((i_is_first or i_is_last) and (j_is_first or j_is_last)):
             continue
         
-        # Try to merge
         new_load = route_i['load'] + route_j['load']
         
         if new_load > max_capacity:
@@ -492,7 +450,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         
         merges_attempted += 1
         
-        # Determine merge order
         merge_orders = []
         
         if i_is_last and j_is_first:
@@ -507,20 +464,15 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
         if i_is_first and j_is_last:
             merge_orders.append(route_j_customers + route_i_customers)
         
-        # Try each merge order
         merged = False
         for merged_customers in merge_orders:
-            # Build route with depot (same depot for both routes)
             test_route = [depot_ij] + merged_customers + [depot_ij]
             
-            # Validate with all constraints
             is_valid, final_route = validate_route(test_route, depot_ij)
             
             if is_valid:
-                # Merge successful!
                 del routes[route_j_id]
                 
-                # Update route_i with merged route (keep same depot)
                 routes[route_i_id] = {
                     'route': final_route,
                     'load': new_load,
@@ -528,7 +480,6 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
                     'depot': depot_ij
                 }
                 
-                # Update customer mappings
                 for c in route_j['customers']:
                     customer_to_route[c] = route_i_id
                 
@@ -540,198 +491,7 @@ def saving_heuristic2(instance, bool_capacity=True) -> List[List[int]]:
             continue
     
     
-    # ==================== CONVERT TO OUTPUT FORMAT ====================
     final_routes = [route_data['route'] for route_data in routes.values()]
     
     
     return final_routes
-
-
-
-
-if __name__ == "__main__":
-    # Find all instance files
-    cvrp_files = sorted(glob.glob("Sets/Set_A/*.vrp"))
-    vrptw_files = sorted(
-        [
-            f
-            for f in glob.glob("Sets/Vrp-Set-HG/*.txt")
-            if not os.path.basename(f) in ["readme.txt"]
-            and not os.path.basename(f).startswith("RC")
-        ]
-    )
-    # Use EVRPTW Green VRP instances instead of the old Felipe XML or A/B datasets
-    gvrp_files = sorted(
-        [
-            f
-            for f in glob.glob("Sets/evrptw_instances/*.txt")
-            if not os.path.basename(f) in ["readme.txt"]
-        ]
-    )
-    
-    print(f"Found {len(cvrp_files)} VRP, {len(vrptw_files)} VRPTW, {len(gvrp_files)} GVRP instances")
-    print("=" * 80)
-    
-    results = []
-    
-    # Process VRP instances (with bool_capacity=True and False)
-    for bool_cap in [True, False]:
-        for filepath in cvrp_files:
-            try:
-                instance = VRPInstance(filepath)
-                instance_name = os.path.basename(filepath)
-                
-                routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_cap)
-                fitness = VRP_PROBLEM_TYPE.compute_cost(instance, routes)
-                
-                num_customers = sum(len([n for n in route if n != instance.depot]) 
-                                   for route in routes)
-                
-                result = {
-                    "instance_name": instance_name,
-                    "problem_type": "VRP",
-                    "bool_capacity": bool_cap,
-                    "filepath": filepath,
-                    "num_customers": num_customers,
-                    "num_routes": len(routes),
-                    "fitness": fitness,
-                    "routes": routes
-                }
-                results.append(result)
-                
-                cap_str = "cap=True " if bool_cap else "cap=False"
-                print(f"{instance_name:40s} | VRP | {cap_str:9s} | Routes: {len(routes):3d} | Fitness: {fitness:12.2f}")
-                
-            except Exception as e:
-                print(f"Error processing VRP {filepath}: {e}")
-                continue
-    
-    # Process VRPTW instances (with bool_capacity=True and False)
-    vrptw_instances = []
-    vrptw_filepaths = []
-    for filepath in vrptw_files:
-        try:
-            instance = VRPTWInstance(filepath)
-            vrptw_instances.append(instance)
-            vrptw_filepaths.append(filepath)
-        except Exception as e:
-            print(f"Error loading VRPTW {filepath}: {e}")
-            continue
-    
-    # Process loaded VRPTW instances with both capacity settings
-    for bool_cap in [True, False]:
-        for instance, filepath in zip(vrptw_instances, vrptw_filepaths):
-            try:
-                instance_name = os.path.basename(filepath)
-                
-                routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_cap)
-                fitness = VRP_PROBLEM_TYPE.compute_cost(instance, routes)
-                
-                num_customers = sum(len([n for n in route if n != instance.depot]) 
-                                   for route in routes)
-                
-                result = {
-                    "instance_name": instance_name,
-                    "problem_type": "VRPTW",
-                    "bool_capacity": bool_cap,
-                    "filepath": filepath,
-                    "num_customers": num_customers,
-                    "num_routes": len(routes),
-                    "fitness": fitness,
-                    "routes": routes
-                }
-                results.append(result)
-                
-                cap_str = "cap=True " if bool_cap else "cap=False"
-                print(f"{instance_name:40s} | VRPTW | {cap_str:9s} | Routes: {len(routes):3d} | Fitness: {fitness:12.2f}")
-                
-            except Exception as e:
-                print(f"Error processing VRPTW {filepath}: {e}")
-                continue
-    
-    # Convert VRPTW to GVRPTW and process (with bool_capacity=True and False)
-    if vrptw_instances:
-        try:
-            gvrptw_instances = convert_vrptw_to_gvrptw(vrptw_instances)
-            for gvrptw_instance, original_filepath in zip(gvrptw_instances, vrptw_filepaths):
-                instance_name = os.path.basename(original_filepath)
-                
-                for bool_cap in [True, False]:
-                    routes = nearest_neighbor_heuristic(gvrptw_instance, bool_capacity=bool_cap)
-                    fitness = VRP_PROBLEM_TYPE.compute_cost(gvrptw_instance, routes)
-                    
-                    num_customers = sum(len([n for n in route if n != gvrptw_instance.depot and 
-                                            getattr(gvrptw_instance, 'node_types', [0] * gvrptw_instance.dimension)[n] != 2])
-                                       for route in routes)
-                    
-                    result = {
-                        "instance_name": instance_name,
-                        "problem_type": "GVRPTW",
-                        "bool_capacity": bool_cap,
-                        "filepath": original_filepath,
-                        "num_customers": num_customers,
-                        "num_routes": len(routes),
-                        "fitness": fitness,
-                        "routes": routes
-                    }
-                    results.append(result)
-                    
-                    cap_str = "cap=True " if bool_cap else "cap=False"
-                    print(f"{instance_name:40s} | GVRPTW | {cap_str:9s} | Routes: {len(routes):3d} | Fitness: {fitness:12.2f}")
-                    
-        except Exception as e:
-            print(f"Error processing GVRPTW conversions: {e}")
-    
-    # Process GVRP instances (with bool_capacity=True and False)
-    for bool_cap in [True, False]:
-        for filepath in gvrp_files:
-            try:
-                instance = GVRPMultiTechInstance(filepath)
-                instance_name = os.path.basename(filepath)
-                
-                routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_cap)
-                fitness = VRP_PROBLEM_TYPE.compute_cost(instance, routes)
-                
-                num_customers = sum(len([n for n in route if n != instance.depot and 
-                                        getattr(instance, 'node_types', [0] * instance.dimension)[n] != 2])
-                                   for route in routes)
-                
-                result = {
-                    "instance_name": instance_name,
-                    "problem_type": "GVRP",
-                    "bool_capacity": bool_cap,
-                    "filepath": filepath,
-                    "num_customers": num_customers,
-                    "num_routes": len(routes),
-                    "fitness": fitness,
-                    "routes": routes
-                }
-                results.append(result)
-                
-                cap_str = "cap=True " if bool_cap else "cap=False"
-                print(f"{instance_name:40s} | GVRP | {cap_str:9s} | Routes: {len(routes):3d} | Fitness: {fitness:12.2f}")
-                
-            except Exception as e:
-                print(f"Error processing GVRP {filepath}: {e}")
-                continue
-    
-    results_dir = "results"
-    os.makedirs(results_dir, exist_ok=True)
-    
-    # Save results to CSV
-    csv_filename = os.path.join(results_dir, "nearest_neighbor_results.csv")
-    with open(csv_filename, 'w', newline='') as csvfile:
-        fieldnames = ["instance_name", "problem_type", "bool_capacity", "filepath", "num_customers", "num_routes", "fitness"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for result in results:
-            writer.writerow({k: v for k, v in result.items() if k != "routes"})
-    
-    # Save detailed results with routes to JSON
-    json_filename = os.path.join(results_dir, "nearest_neighbor_results.json")
-    with open(json_filename, 'w') as jsonfile:
-        json.dump(results, jsonfile, indent=2)
-    
-    print("=" * 80)
-    print(f"Results saved to {csv_filename} and {json_filename}")
-    print(f"Processed {len(results)} instances successfully (8 variants: 4 problem types × 2 capacity settings)")

@@ -35,12 +35,10 @@ FNAME_CXMU_RE = re.compile(r"^exp_cx(\d+)_mu(\d+)_(\d+)\.csv$", re.IGNORECASE)
 FNAME_T_RE = re.compile(r"^exp_t(\d+)_(\d+)\.csv$", re.IGNORECASE)
 FNAME_TRAIN_RE = re.compile(r"^exp_train(\d+)_(\d+)\.csv$", re.IGNORECASE)
 FNAME_SET_RE = re.compile(r"^exp_([A-Za-z][A-Za-z0-9]*)_(\d+)\.csv$", re.IGNORECASE)
-# After pg/cxmu/t: one letter label + run (avoids stealing exp_t2_1 — tournament matched above)
 FNAME_NODES_RE = re.compile(r"^exp_+([A-Za-z])_(\d+)\.csv$", re.IGNORECASE)
 
 ConfigKey = tuple[str, int | str, int]
 
-# Infer (TW, green, MD) from problem_type labels (aligned with test_experiment_res.py).
 def _infer_tw_green_md(problem_type: str) -> tuple[bool, bool, bool]:
     pt = problem_type.strip()
     if pt in ("VRP", "CVRP"):
@@ -89,7 +87,6 @@ def parse_filename(path: Path) -> tuple[str, int | str, int, int] | None:
         return ("nodes", m.group(1), 0, int(m.group(2)))
     m = FNAME_SET_RE.match(path.name)
     if m:
-        # Generic set-size label mode (after specific modes and node-size one-letter labels).
         return ("set", m.group(1).lower(), 0, int(m.group(2)))
     return None
 
@@ -208,7 +205,6 @@ def build_bool_flags_heatmap_matrix(
     over CSV rows matching that flag (each row counts equally).
     """
     col_keys = sorted(groups.keys(), key=cfg_sort_key)
-    #row_labels = [label for label, _ in BOOL_FLAG_ROWS]
     row_labels = [
         "Capacity",
         "Time windows",
@@ -290,7 +286,6 @@ def save_pct_nn_boxplot(
     else:
         ax.axhline(0, color="gray", linewidth=0.8)
     ax.set_ylabel(ylabel)
-    #ax.set_title(title)
     ax.grid(axis="y", alpha=0.35)
     fig.tight_layout()
     fig.savefig(out_path, dpi=dpi)
@@ -308,7 +303,6 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Per-run file scores: one weighted score per CSV ---
     cfg_scores_nn: dict[ConfigKey, list[float]] = defaultdict(list)
     cfg_scores_nn_unweighted: dict[ConfigKey, list[float]] = defaultdict(list)
     cfg_scores_sav: dict[ConfigKey, list[float]] = defaultdict(list)
@@ -339,7 +333,6 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
     labels = [cfg_label(c) for c in col_keys]
     labels_box = [cfg_label(c) for c in col_keys_box]
 
-    # 1) Summary: weighted mean pct_vs_nn and pct_vs_savings across problem types
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
     ax0, ax1 = axes
     ax0.bar(x, means_nn, yerr=stds_nn, capsize=4, color="steelblue", edgecolor="navy", alpha=0.85)
@@ -360,14 +353,13 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
 
     fig.suptitle("Experiment comparison", fontsize=12, fontweight="bold")
     fig.tight_layout()
-    p_summary = out_dir / "summary_pct_vs_baselines.png"
+    p_summary = out_dir / "summary_pct_vs_baselines.pdf"
     fig.savefig(p_summary, dpi=dpi)
     plt.close(fig)
     print(f"Wrote {p_summary}")
 
-    # 2) Boxplot: distribution of per-run scores (instance-weighted mean per file)
     data_nn = [cfg_scores_nn[c] for c in col_keys_box]
-    p_box = out_dir / "boxplot_pct_vs_nn.png"
+    p_box = out_dir / "boxplot_pct_vs_nn.pdf"
     save_pct_nn_boxplot(
         data_nn,
         labels_box,
@@ -378,9 +370,8 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
     )
     print(f"Wrote {p_box}")
 
-    # 2b) Boxplot: same runs, unweighted mean across CSV rows per file
     data_nn_uw = [cfg_scores_nn_unweighted[c] for c in col_keys_box]
-    p_box_uw = out_dir / "boxplot_pct_vs_nn_unweighted.png"
+    p_box_uw = out_dir / "boxplot_pct_vs_nn_unweighted.pdf"
     save_pct_nn_boxplot(
         data_nn_uw,
         labels_box,
@@ -391,7 +382,6 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
     )
     print(f"Wrote {p_box_uw}")
 
-    # 3) Heatmap: mean pct_vs_nn per problem variant × config
     row_keys, h_col_keys, mat = build_heatmap_matrix(groups)
     fig, ax = plt.subplots(figsize=(max(8, len(col_keys) * 1.2), 10))
     valid = mat[np.isfinite(mat)]
@@ -406,17 +396,15 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
     ax.set_xticklabels([cfg_label(c) for c in h_col_keys], fontsize=8)
     ax.set_yticks(np.arange(len(row_keys)))
     ax.set_yticklabels([f"{pt} ({cap})" for pt, cap in row_keys], fontsize=7)
-    #ax.set_xlabel(f"Experiment ({cfg_axis_title(mode)})")
     ax.set_ylabel("Problem variant (type, capacity constraint)")
     ax.set_title("Mean % vs NN")
     plt.colorbar(im, ax=ax, fraction=0.02, pad=0.02, label="% vs NN")
     fig.tight_layout()
-    p_hm = out_dir / "heatmap_pct_vs_nn.png"
+    p_hm = out_dir / "heatmap_pct_vs_nn.pdf"
     fig.savefig(p_hm, dpi=dpi)
     plt.close(fig)
     print(f"Wrote {p_hm}")
 
-    # 3b) Heatmap: 4 rows (one per bool axis), same columns as above
     row_bool_labels, h_col_keys_bool, mat_bool = build_bool_flags_heatmap_matrix(groups)
     fig, ax = plt.subplots(figsize=(max(8, len(col_keys) * 1.2), 4.2))
     valid_b = mat_bool[np.isfinite(mat_bool)]
@@ -431,16 +419,13 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
     ax.set_xticklabels([cfg_label(c) for c in h_col_keys_bool], fontsize=8)
     ax.set_yticks(np.arange(len(row_bool_labels)))
     ax.set_yticklabels(row_bool_labels, fontsize=9)
-    #ax.set_xlabel(f"Experiment ({cfg_axis_title(mode)})")
-    #ax.set_title("Mean % vs NN by bool flag")
     plt.colorbar(im_b, ax=ax, fraction=0.02, pad=0.02, label="% vs NN")
     fig.tight_layout()
-    p_hm_bool = out_dir / "heatmap_pct_vs_nn_by_bool_flags.png"
+    p_hm_bool = out_dir / "heatmap_pct_vs_nn_by_bool_flags.pdf"
     fig.savefig(p_hm_bool, dpi=dpi)
     plt.close(fig)
     print(f"Wrote {p_hm_bool}")
 
-    # 4) Ranking: unweighted mean % vs NN (across runs)
     rank_nn_uw = sorted(
         zip(col_keys, means_nn_uw, stds_nn_uw),
         key=lambda t: t[1],
@@ -469,7 +454,7 @@ def main():
         "--out_dir",
         type=Path,
         default=None,
-        help="Output directory for PNG figures (default: <exp_dir>/figures)",
+        help="Output directory for PDF figures (default: <exp_dir>/figures)",
     )
     parser.add_argument("--dpi", type=int, default=150)
     args = parser.parse_args()

@@ -91,7 +91,6 @@ def run(exp_dir: Path, out_path: Path, top_n: int) -> None:
     ax.set_xticks(x)
     ax.set_xticklabels(terminals, rotation=30, ha="right")
     ax.set_ylabel("Count")
-    #ax.set_title("Terminal usage by set_size variant (best_expr)")
     ax.grid(axis="y", alpha=0.3)
     ax.legend(title="Variant", loc="best")
     ax.margins(x=0.004)
@@ -123,12 +122,11 @@ def run_separate(exp_dir: Path, out_dir: Path, top_n: int) -> None:
         ax.set_xticks(range(len(terms)))
         ax.set_xticklabels(terms, rotation=30, ha="right")
         ax.set_ylabel("Count")
-        #ax.set_title(f"Terminal usage")
         ax.grid(axis="y", alpha=0.3)
         ax.margins(x=0.004)
         fig.tight_layout()
 
-        out_path = out_dir / f"set_size_terminals_{v.lower()}.png"
+        out_path = out_dir / f"set_size_terminals_{v.lower()}.pdf"
         fig.savefig(out_path, dpi=150)
         plt.close(fig)
         print(f"Wrote {out_path}")
@@ -147,7 +145,7 @@ def main() -> None:
         "--out",
         type=Path,
         default=None,
-        help="Output PNG path (default: <exp_dir>/figures/set_size_terminals_grouped.png)",
+        help="Output PDF path (default: <exp_dir>/figures/set_size_terminals_grouped.pdf)",
     )
     parser.add_argument(
         "--out_dir_separate",
@@ -158,7 +156,7 @@ def main() -> None:
     parser.add_argument("--top_n", type=int, default=20, help="Top N terminals by total count")
     args = parser.parse_args()
 
-    out = args.out or (args.exp_dir / "figures" / "set_size_terminals_grouped.png")
+    out = args.out or (args.exp_dir / "figures" / "set_size_terminals_grouped.pdf")
     run(args.exp_dir, out, args.top_n)
     out_dir_sep = args.out_dir_separate or (args.exp_dir / "figures")
     run_separate(args.exp_dir, out_dir_sep, args.top_n)

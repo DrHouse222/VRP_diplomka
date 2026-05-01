@@ -46,7 +46,6 @@ def main() -> None:
     best: dict[tuple[str, str], tuple[float, dict[str, str], str]] = {}
 
     for path in sorted(root.rglob("*.csv")):
-        # Do not ingest a previous aggregate output
         if path.name == "best_per_variant.csv":
             continue
         rel = str(path.relative_to(root))
@@ -69,7 +68,6 @@ def main() -> None:
     if not best:
         raise SystemExit(f"No rows with finite pct_vs_nn found under {root}")
 
-    # Stable order: by index if present, else by problem_type, bool_capacity
     def sort_key(item: tuple[tuple[str, str], Any]) -> tuple:
         k, (_, row, _) = item
         try:

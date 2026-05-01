@@ -11,9 +11,9 @@ import math
 import operator
 import os
 
-from parser import VRPFeatureExtractor
-from problem_types import VRP_PROBLEM_TYPE
-from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic2
+from vrp_feature_extractor import VRPFeatureExtractor
+from vrp_problem import VRP_PROBLEM_TYPE
+from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic
 from data_generation import remove_tw_from_gvrp, evrptw_to_multi_depot
 from DEAP_gen import load_instances_by_type
 
@@ -58,7 +58,6 @@ def build_scoring_callable(heuristic_code: str):
         raise ValueError("Empty heuristic code")
 
     if code.strip().startswith("def "):
-        # Define function in namespace with operators, then wrap to accept *args
         exec_ns = dict(op_ns)
         exec(code, exec_ns)
         fn = (
@@ -67,7 +66,6 @@ def build_scoring_callable(heuristic_code: str):
             or exec_ns.get("score_function")
         )
         if fn is None:
-            # Use any user-defined function from the exec (e.g. def my_score(...))
             fn = next(
                 (v for k, v in exec_ns.items() if callable(v) and k not in op_ns),
                 None,
@@ -76,13 +74,11 @@ def build_scoring_callable(heuristic_code: str):
             raise ValueError("Code defines no 'score' or 'scoring_function'")
         def scoring_func(*args):
             kwargs = dict(zip(feature_names, args))
-            # Pass only the keys the function accepts
             sig = inspect.signature(fn)
             params = {k: kwargs.get(k, 0.0) for k in sig.parameters}
             return float(fn(**params))
         return scoring_func
 
-    # Expression only: eval with feature names bound to args
     try:
         compiled = compile(code, "<llm_heuristic>", "eval")
     except SyntaxError:
@@ -112,8 +108,10 @@ def load_problem_map():
 
 def main(max_instances_per_variant=None):
     """
-    max_instances_per_variant: if set (e.g. 3), only use that many instances per
-    variant for a quicker run. None = use all instances.
+    max_instances_per_variant: Use that many instances per
+    variant. None = use all instances.
+
+    returns written to "res_test_LLM.csv"
     """
     json_path = os.path.join(os.path.dirname(__file__), "generated_heuristics.json")
     with open(json_path, "r", encoding="utf-8") as f:
@@ -175,7 +173,7 @@ def main(max_instances_per_variant=None):
             except Exception:
                 nn_costs.append(float("nan"))
             try:
-                routes_s = saving_heuristic2(inst, bool_capacity=bool_capacity)
+                routes_s = saving_heuristic(inst, bool_capacity=bool_capacity)
                 savings_costs.append(VRP_PROBLEM_TYPE.compute_cost(inst, routes_s))
             except Exception:
                 savings_costs.append(float("nan"))
@@ -186,7 +184,6 @@ def main(max_instances_per_variant=None):
         nn_avg = sum(nn_costs) / n if n else float("nan")
         s_avg = sum(savings_costs) / n if n else float("nan")
 
-        # Percentual difference: (baseline - llm) / baseline * 100; positive = LLM better
         pct_vs_nn = None
         pct_vs_sav = None
         if llm_avg is not None and not math.isnan(llm_avg):
@@ -207,7 +204,6 @@ def main(max_instances_per_variant=None):
             "pct_vs_savings": pct_vs_sav,
         })
 
-    # Report
     print("\n" + "=" * 100)
     print("LLM vs NN vs Savings (average cost per instance set)")
     print("=" * 100)
@@ -231,7 +227,6 @@ def main(max_instances_per_variant=None):
         print(f"{idx:<5} {var:<14} {cap:<5} {n:<4} {llm_s:<12} {nn_s:<12} {sav_s:<12} {vs_nn:<10} {vs_sav:<10}")
     print("=" * 100)
 
-    # Optional: save CSV (with percentual differences)
     csv_path = os.path.join(os.path.dirname(__file__), "res_test_LLM.csv")
     with open(csv_path, "w", encoding="utf-8") as f:
         f.write("index,variant,bool_capacity,n_instances,llm_avg_cost,nn_avg_cost,savings_avg_cost,pct_vs_nn,pct_vs_savings\n")

@@ -6,7 +6,7 @@ For each experiment (one line in the JSONL file), this script creates:
   - a fitness evolution plot (avg / min / max per generation)
   - a tree-size evolution plot (avg / min / max per generation)
 
-The plots are saved as PNG files in the specified output directory.
+The plots are saved as PDF files in the specified output directory.
 """
 
 import json
@@ -53,7 +53,6 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
             vals.append(entry.get(col))
         return vals
 
-    # Fitness stats (may be None if you only logged gen/nevals)
     fit_avg = extract_series("fitness", "avg")
     fit_min = extract_series("fitness", "min")
     fit_max = extract_series("fitness", "max")
@@ -64,7 +63,6 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
 
     os.makedirs(out_dir, exist_ok=True)
 
-    # Fitness plot
     if fit_avg is not None:
         plt.figure(figsize=(8, 5))
         plt.plot(gens, fit_avg, label="avg", color="C0")
@@ -77,12 +75,11 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
         plt.grid(True, linestyle="--", alpha=0.4)
         plt.legend()
 
-        fname = f"fitness_{problem_type}_cap{int(bool_capacity)}.png"
+        fname = f"fitness_{problem_type}_cap{int(bool_capacity)}.pdf"
         plt.tight_layout()
         plt.savefig(os.path.join(out_dir, fname))
         plt.close()
 
-    # Tree size plot
     if size_avg is not None:
         plt.figure(figsize=(8, 5))
         plt.plot(gens, size_avg, label="avg", color="C1")
@@ -95,7 +92,7 @@ def plot_single_experiment(record: Dict[str, Any], out_dir: str) -> None:
         plt.grid(True, linestyle="--", alpha=0.4)
         plt.legend()
 
-        fname = f"size_{problem_type}_cap{int(bool_capacity)}.png"
+        fname = f"size_{problem_type}_cap{int(bool_capacity)}.pdf"
         plt.tight_layout()
         plt.savefig(os.path.join(out_dir, fname))
         plt.close()

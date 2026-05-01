@@ -1,0 +1,17 @@
+index,problem_type,bool_capacity,n_instances,gp_avg_cost,optimal_avg_cost,pct_gap_vs_optimal,n_optima_found,n_instances_expected,source_file
+0,VRP,False,27,617.8532664441872,,,,,node_size/exp_I_3.csv
+1,MDVRP,False,33,2603.8579521678694,,,,,mut_cross/exp_cx100_mu20_4.csv
+2,GVRP,False,92,556.9100765255484,,,,,tournament_size/exp_t7_2.csv
+3,GVRP-MD,False,92,589.2790422265981,,,,,node_size/exp_E_1.csv
+4,VRPTW,False,120,6230.764384596891,,,,,set_size/exp_Core_4.csv
+5,MDVRPTW,False,20,3458.3213083279707,,,,,mut_cross/exp_cx100_mu05_1.csv
+6,G-VRPTW,False,92,1062.9690972184806,,,,,2train/exp_Refined_1.csv
+7,G-VRPTW-MD,False,92,919.9446386953742,,,,,2train/exp_Refined_2.csv
+8,VRP,True,27,1277.1969174647488,,,0,0,2train/exp_train10_4.csv
+9,MDVRP,True,33,3456.3229922682663,,,0,0,mut_cross/exp_cx100_mu20_5.csv
+10,GVRP,True,92,703.3921946268285,,,,,tournament_size/exp_t7_5.csv
+11,GVRP-MD,True,92,676.4204307884966,,,,,2train/exp_Refined_3.csv
+12,VRPTW,True,120,6683.9997439159,,,0,0,set_size/exp_Core_4.csv
+13,MDVRPTW,True,20,3540.4892437905996,,,0,0,tournament_size/exp_t5_4.csv
+14,G-VRPTW,True,92,1071.5284030222672,,,,,pop_gen/exp_p50_g200_3.csv
+15,G-VRPTW-MD,True,92,925.1946934382917,,,,,set_size/exp_Atomic_4.csv

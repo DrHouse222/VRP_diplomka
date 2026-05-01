@@ -5,10 +5,11 @@ Genetic Programming solution for VRP variants using DEAP framework.
 
 import numpy as np
 from deap import base, creator, tools, gp, algorithms
-from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, VRPFeatureExtractor, CordeauMDVRPInstance
-from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic2
-from problem_types import VRP_PROBLEM_TYPE
-from data_generation import convert_vrptw_to_gvrptw, remove_tw_from_gvrp, evrptw_to_multi_depot
+from parser import VRPInstance, VRPTWInstance, GVRPMultiTechInstance, CordeauMDVRPInstance
+from vrp_feature_extractor import VRPFeatureExtractor
+from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic
+from vrp_problem import VRP_PROBLEM_TYPE
+from data_generation import remove_tw_from_gvrp, evrptw_to_multi_depot
 import time
 import copy
 import matplotlib.pyplot as plt
@@ -25,7 +26,6 @@ def create_toolbox(min_initial=2, max_initial=6):
     """Create the DEAP toolbox"""
     pset = VRP_PROBLEM_TYPE.create_primitive_set(gp)
     
-    # Create DEAP classes only if they don't already exist
     if not hasattr(creator, "FitnessMin"):
         creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     if not hasattr(creator, "Individual"):
@@ -40,9 +40,8 @@ def create_toolbox(min_initial=2, max_initial=6):
     return toolbox, pset
 
 
-def evaluate_individual(individual, instances, bool_capacity=True, bool_green=True):
+def evaluate_individual(individual, instances, bool_capacity=True):
     """Evaluate a GP individual on VRP instances."""
-    # Compile the individual
     func = gp.compile(expr=individual, pset=VRP_PROBLEM_TYPE.create_primitive_set(gp))
     
     total_fitness = 0.0
@@ -50,15 +49,12 @@ def evaluate_individual(individual, instances, bool_capacity=True, bool_green=Tr
     for instance in instances:
         feature_extractor = VRPFeatureExtractor(instance)
         
-        # Solve using the GP function
-        if (bool_green):
-            solution = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
-        else:
-            solution = VRP_PROBLEM_TYPE.solve_with_scoring_without_green(instance, feature_extractor, func, bool_capacity)
+        solution = VRP_PROBLEM_TYPE.solve_with_scoring(
+            instance, feature_extractor, func, bool_capacity
+        )
         fitness = VRP_PROBLEM_TYPE.compute_cost(instance, solution)
         total_fitness += fitness
     
-    # Add tree size penalty
     tree_size = len(individual)
     tree_size_penalty = 0.1 * tree_size 
     total_fitness += tree_size_penalty
@@ -75,7 +71,6 @@ def run_genetic_programming(
     seed: int | None = None,
     cxpb: float = 1.0,
     mutpb: float = 0.2,
-    bool_green: bool = True,
     tournsize: int = 3,
     min_initial=2,
     max_initial=6,
@@ -84,20 +79,16 @@ def run_genetic_programming(
 ):
     """Run genetic programming to evolve VRP scoring function."""
     
-    # Optional seeding for reproducibility
     if seed is not None:
         import random
         random.seed(seed)
         np.random.seed(seed)
 
-    # Create toolbox
     toolbox, pset = create_toolbox(min_initial=min_initial, max_initial=max_initial)
     
-    # Create evaluation function
     def evaluate_with_problem_type(individual):
-        return evaluate_individual(individual, instances, bool_capacity, bool_green)
+        return evaluate_individual(individual, instances, bool_capacity)
     
-    # Register evaluation function
     toolbox.register("evaluate", evaluate_with_problem_type)
     toolbox.register("select", tools.selTournament, tournsize=tournsize)
     toolbox.register("mate", gp.cxOnePoint)
@@ -108,7 +99,6 @@ def run_genetic_programming(
     toolbox.decorate("mutate", gp.staticLimit(key=operator.attrgetter("height"), max_value=10))
 
     
-    # Statistics
     stats_fit = tools.Statistics(lambda ind: ind.fitness.values)
     stats_size = tools.Statistics(len)
     mstats = tools.MultiStatistics(fitness=stats_fit, size=stats_size)
@@ -117,13 +107,10 @@ def run_genetic_programming(
     mstats.register("min", np.min)
     mstats.register("max", np.max)
     
-    # Hall of Fame: Tracks the best individual across all generations
     hof = tools.HallOfFame(1)
     
-    # Create population
     population = toolbox.population(n=population_size)
     
-    # Evaluate initial population
     fitnesses = list(map(toolbox.evaluate, population))
     for ind, fit in zip(population, fitnesses):
         ind.fitness.values = fit
@@ -132,22 +119,18 @@ def run_genetic_programming(
     logbook = tools.Logbook()
     logbook.header = ['gen', 'nevals'] + (mstats.fields if mstats else [])
     
-    # Record initial statistics
     record = mstats.compile(population) if mstats else {}
     logbook.record(gen=0, nevals=len(population), **record)
     if mstats:
         print(logbook.stream)
     
-    # Evolution loop
     start_time = time.time()
     for gen in range(1, generations + 1):
         if time_limit_sec is not None and (time.time() - start_time) >= time_limit_sec:
             break
-        # Select and clone the next generation individuals
         offspring = toolbox.select(population, len(population))
         offspring = list(map(toolbox.clone, offspring))
         
-        # Apply crossover and mutation on the offspring
         for child1, child2 in zip(offspring[::2], offspring[1::2]):
             if np.random.random() < cxpb:
                 toolbox.mate(child1, child2)
@@ -159,29 +142,23 @@ def run_genetic_programming(
                 toolbox.mutate(mutant)
                 del mutant.fitness.values
         
-        # Evaluate the individuals with an invalid fitness
         invalid_ind = [ind for ind in offspring if not ind.fitness.valid]
         fitnesses = map(toolbox.evaluate, invalid_ind)
         for ind, fit in zip(invalid_ind, fitnesses):
             ind.fitness.values = fit
         
-        # Update Hall of Fame (best of all time)
         hof.update(offspring)
         
-        # Next generation = offspring (tournament selection only, no elitism)
         population[:] = offspring
-        # Inject the best individual of all time into the population (replace one random)
         if hof:
             idx = np.random.randint(len(population))
             population[idx] = toolbox.clone(hof[0])
         
-        # Append the current generation statistics to the logbook
         record = mstats.compile(population) if mstats else {}
         logbook.record(gen=gen, nevals=len(invalid_ind), **record)
         if mstats:
             print(logbook.stream)
     
-    # Get best individual from Hall of Fame
     best_individual = hof[0]
     
     return best_individual, logbook, pset
@@ -199,7 +176,6 @@ def train_and_test_problem_type(
     seed: int | None = None,
     cxpb: float = 0.8,
     mutpb: float = 0.15,
-    bool_green: bool = True,
     evaluate_test_split: bool = True,
     tournsize: int = 3,
     min_initial: int = 2,
@@ -208,17 +184,58 @@ def train_and_test_problem_type(
     max_mut: int = 3,
 ):
     """
-    Train on 'n_train' instances, optionally evaluate on a held-out test split.
+    Train a GP scoring function for one problem variant and evaluate it.
 
-    Prints detailed fitness comparison for every instance in each evaluated set.
-    If ``evaluate_test_split`` is False, GP still uses only ``train_instances``,
-    but per-instance evaluation on the test split is skipped (saves time in batch runs).
+    Parameters
+    ----------
+    all_instances : list
+        Full list of parsed instances for the selected problem variant.
+    problem_type : str
+        Variant label used in logs/output (for example `VRP`, `VRPTW`).
+    n_train : int
+        Number of instances used for training.
+    n_test : int
+        Number of held-out test instances. If set to `-1`, all remaining
+        instances after the training split are used.
+    bool_capacity : bool
+        If True, enforce vehicle capacity constraints during routing.
+    population_size : int
+        GP population size.
+    generations : int
+        Maximum number of GP generations.
+    time_limit_sec : float or None
+        Optional wall-clock budget (seconds) for GP evolution. If None,
+        evolution runs for the full number of generations.
+    seed : int or None
+        Random seed for reproducibility. If None, no explicit seed is set.
+    cxpb : float
+        Crossover probability used by GP.
+    mutpb : float
+        Mutation probability used by GP.
+    evaluate_test_split : bool
+        If True, evaluate and print metrics on the held-out test split.
+        If False, only training metrics are evaluated.
+    tournsize : int
+        Tournament size for selection.
+    min_initial : int
+        Minimum initial tree depth when creating individuals.
+    max_initial : int
+        Maximum initial tree depth when creating individuals.
+    min_mut : int
+        Minimum mutation tree depth.
+    max_mut : int
+        Maximum mutation tree depth.
+
+    Returns
+    -------
+    tuple or None
+        `(best_individual, logbook, pset)` when training runs, otherwise
+        `None` if `all_instances` is empty.
     """
     if not all_instances:
         print(f"No {problem_type} instances available, skipping...")
         return None
     
-    # --- 1. THE SPLIT ---
     total_count = len(all_instances)
     if n_test == -1:
         if n_train >= total_count:
@@ -248,7 +265,6 @@ def train_and_test_problem_type(
         )
     print(f"{'='*60}")
     
-    # --- 2. TRAINING ---
     print(f"Starting Genetic Programming on {len(train_instances)} training instances...")
     best_individual, logbook, pset = run_genetic_programming(
         instances=train_instances,
@@ -259,7 +275,6 @@ def train_and_test_problem_type(
         seed=seed,
         cxpb=cxpb,
         mutpb=mutpb,
-        bool_green=bool_green,
         tournsize=tournsize,
         min_initial=min_initial,
         max_initial=max_initial,
@@ -267,12 +282,10 @@ def train_and_test_problem_type(
         max_mut=max_mut,
     )
     
-    # Get the evolved function
     func = gp.compile(expr=best_individual, pset=pset)
     print(f"\n{problem_type} Evolved scoring formula:")
     print(f"{str(best_individual)}")
     
-    # --- 3. DETAILED EVALUATION FUNCTION ---
     def evaluate_set(name, dataset):
         if not dataset:
             return 0.0
@@ -284,27 +297,20 @@ def train_and_test_problem_type(
 
             time_start = time.time()
             
-            # Create feature extractor
             feature_extractor = VRPFeatureExtractor(instance)
             
-            # Solve using the GP function
-            if (bool_green):
-                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(instance, feature_extractor, func, bool_capacity)
-            else:
-                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring_without_green(instance, feature_extractor, func, bool_capacity)
+            gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(
+                instance, feature_extractor, func, bool_capacity
+            )
             gp_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, gp_routes)
 
-            # Solve using Baseline (Nearest Neighbor)
             nn_routes = nearest_neighbor_heuristic(instance, bool_capacity=bool_capacity)
             nn_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, nn_routes)
 
-            #s_routes = saving_heuristic(instance, bool_capacity=bool_capacity)
-            s_routes2 = saving_heuristic2(instance, bool_capacity=bool_capacity)
+            s_routes2 = saving_heuristic(instance, bool_capacity=bool_capacity)
 
             s_fitness = VRP_PROBLEM_TYPE.compute_cost(instance, s_routes2)
-            #s_fitness2 = VRP_PROBLEM_TYPE.compute_cost(instance, s_routes2)
             
-            # Calculate Improvement
             if nn_fitness > 0:
                 impNN = ((nn_fitness - gp_fitness) / nn_fitness) * 100
             else:
@@ -321,7 +327,6 @@ def train_and_test_problem_type(
             print(f"  GP-DEAP Solution: Fitness = {gp_fitness:.2f}")
             print(f"  Nearest Neighbor: Fitness = {nn_fitness:.2f}")
             print(f"  Saving Heuristic : Fitness = {s_fitness:.2f}")
-            #print(f"  Saving Heuristic2: Fitness = {s_fitness2:.2f}")
             print(f"  Improvement over NN (fitness): {impNN:.2f}%")
             print(f"  Improvement over Saving (fitness): {impS:.2f}%")
             print(f"  Time taken: {elapsed:.2f} seconds")
@@ -331,12 +336,9 @@ def train_and_test_problem_type(
             
         return total_improvementNN / len(dataset), total_improvementS / len(dataset)
 
-    # --- 4. RUN EVALUATION ---
     
-    # Evaluate Training Data
     train_impNN, train_impS = evaluate_set("TRAINING", train_instances)
     
-    # Evaluate Testing Data (if any)
     if evaluate_test_split and test_instances:
         test_impNN, test_impS = evaluate_set("TESTING", test_instances)
     else:
@@ -358,17 +360,18 @@ def train_and_test_problem_type(
 
 
 def plot_route(instance, route, title=None, ax=None, fitness=None):
+    """
+    Function to help visualize constructed routes.
+    """
     coords = instance.coords
     depot = getattr(instance, "depot", 0)
     n = instance.dimension
     
-    # Check if route is a single route or list of routes
     if route and isinstance(route[0], list):
-        routes = route  # Multiple routes
+        routes = route
     else:
-        routes = [route]  # Single route, wrap in list
+        routes = [route]
     
-    # Auto-detect problem type for title
     if title is None:
         has_tw = all(hasattr(instance, attr) for attr in ("ready_times", "due_dates", "service_times"))
         has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
@@ -386,58 +389,46 @@ def plot_route(instance, route, title=None, ax=None, fitness=None):
         else:
             title = f"{base_title} Route"
     
-    # Add fitness to title if provided
     if fitness is not None:
         if len(routes) > 1:
             title = f"{title} (Fitness: {fitness:.2f}, {len(routes)} routes)"
         else:
             title = f"{title} (Fitness: {fitness:.2f})"
     
-    # Create figure if needed
     if ax is None:
         fig_size = (12, 10) if len(routes) > 1 else (10, 8)
         fig, ax = plt.subplots(figsize=fig_size)
     else:
         fig = ax.figure
     
-    # Get node types if available (GVRP only)
     node_types = getattr(instance, "node_types", None)
     
-    # Identify different node types
     if node_types is not None:
-        # GVRP: use node_types array
         depots = [i for i in range(n) if node_types[i] == 0]
         customers = [i for i in range(n) if node_types[i] == 1]
         stations = [i for i in range(n) if node_types[i] == 2]
     else:
-        # VRP/VRPTW: depot is at index 0 (or instance.depot), rest are customers
         depots = [depot]
         customers = [i for i in range(n) if i != depot]
         stations = []
     
-    # Plot all nodes as grey dots (background)
     ax.scatter(coords[:, 0], coords[:, 1], c='lightgrey', s=20, alpha=0.5, zorder=1)
     
-    # Plot customers (blue circles)
     if customers:
         customer_coords = coords[customers]
         ax.scatter(customer_coords[:, 0], customer_coords[:, 1], 
                   c='blue', marker='o', s=50, label='Customer', zorder=2)
     
-    # Plot charging stations (red triangles) - only for GVRP
     if stations:
         station_coords = coords[stations]
         ax.scatter(station_coords[:, 0], station_coords[:, 1], 
                   c='red', marker='^', s=80, label='Charging Station', zorder=3)
     
-    # Plot depot (black square)
     depot_coords = coords[depots]
     ax.scatter(depot_coords[:, 0], depot_coords[:, 1], 
               c='black', marker='s', s=150, label='Depot', zorder=4, edgecolors='white', linewidths=2)
     
-    # Plot all routes
     if len(routes) > 1:
-        # Multiple routes: use different colors
         colors = plt.cm.tab10(np.linspace(0, 1, len(routes)))
         for idx, route_path in enumerate(routes):
             if len(route_path) > 1:
@@ -446,7 +437,6 @@ def plot_route(instance, route, title=None, ax=None, fitness=None):
                        '-', linewidth=2, alpha=0.7, color=colors[idx], 
                        label=f'Route {idx+1}', zorder=2)
                 
-                # Add arrows to show direction
                 for i in range(len(route_path) - 1):
                     start = coords[route_path[i]]
                     end = coords[route_path[i + 1]]
@@ -458,14 +448,12 @@ def plot_route(instance, route, title=None, ax=None, fitness=None):
                                                   color=colors[idx], 
                                                   lw=1.5, alpha=0.6))
     else:
-        # Single route: use blue
         route_path = routes[0]
         if len(route_path) > 1:
             path_coords = coords[route_path]
             ax.plot(path_coords[:, 0], path_coords[:, 1], 
                    'b-', linewidth=2, alpha=0.7, label='Route', zorder=2)
             
-            # Add arrows to show direction
             for i in range(len(route_path) - 1):
                 start = coords[route_path[i]]
                 end = coords[route_path[i + 1]]
@@ -489,7 +477,6 @@ def plot_route(instance, route, title=None, ax=None, fitness=None):
 def load_instances_by_type():
     """Load instances grouped by problem type. Automatically discovers all .vrp, .txt, and .xml files."""
     cvrp_instances = []
-    # Load all .vrp files from Sets/Set_A
     vrp_files = sorted(glob.glob("Sets/Set_A/*.vrp"))
     for filepath in vrp_files:
         try:
@@ -498,7 +485,6 @@ def load_instances_by_type():
             print(f"Warning: Failed to load {filepath}: {e}")
     
     vrptw_instances = []
-    # Load .txt files from Sets/Vrp-Set-HG
     def natural_sort_key(filename):
         """Natural sort key that handles numbers in filenames."""
         import re
@@ -506,8 +492,7 @@ def load_instances_by_type():
                 for text in re.split(r'(\d+)', os.path.basename(filename))]
     txt_files = sorted(glob.glob("Sets/Vrp-Set-HG/*.txt"), key=natural_sort_key)
 
-    # Ensure these three are first if present
-    preferred_vrptw = ["C1_2_1.txt", "R1_2_1.txt", "RC1_2_1.txt"]
+    preferred_vrptw = ["C1_2_1.txt", "R1_2_1.txt", "RC1_2_1.txt"] # Smaller instances into beginning
     ordered_txt_files = []
     remaining_txt_files = list(txt_files)
     for name in preferred_vrptw:
@@ -526,7 +511,6 @@ def load_instances_by_type():
     
     
     gvrp_instances = []
-    # Load EVRPTW Green VRP instances from Sets/evrptw_instances instead of older datasets
     evrptw_files = sorted(
         [
             f
@@ -535,8 +519,7 @@ def load_instances_by_type():
         ]
     )
 
-    # Ensure these three are first if present
-    preferred_gvrp = ["c101_21.txt", "r101_21.txt", "rc101_21.txt"]
+    preferred_gvrp = ["c101_21.txt", "r101_21.txt", "rc101_21.txt"] # Smaller instances into beginning
     ordered_evrptw_files = []
     remaining_evrptw = list(evrptw_files)
     for name in preferred_gvrp:
@@ -555,7 +538,6 @@ def load_instances_by_type():
     
     mdvrp_instances = []
     mdvrptw_instances = []
-    # Load MDVRP and MDVRPTW instances from Sets/C-mdvrp and Sets/C-mdvrptw
     mdvrp_files = sorted(glob.glob("Sets/C-mdvrp/*"))
     for filepath in mdvrp_files:
         try:
@@ -579,18 +561,15 @@ def load_instances_by_type():
 
 def main():
 
-    # Choose variants
     bool_capacity = 1
     bool_TW = 0
     bool_green = 0
     bool_MD = 1
 
-    # Load instances
     cvrp_instances, vrptw_instances, gvrp_instances, mdvrp_instances, mdvrptw_instances = load_instances_by_type()
     results = None
 
-    # Mapping: (TW, green, MD) -> (Problem Name, Data List)
-    problem_map = {
+    problem_map = { # Problem map for all problem types
         (False, False, False): ("VRP", cvrp_instances),
         (True, False, False):  ("VRPTW", vrptw_instances),
         (False, True, False):  ("GVRP", remove_tw_from_gvrp(copy.deepcopy(gvrp_instances))),
@@ -610,7 +589,6 @@ def main():
             all_instances=instances,
             problem_type=problem_type,
             bool_capacity=bool_capacity,
-            bool_green=bool_green,
             n_train=5,
             n_test=-1,
             population_size=1,
@@ -629,11 +607,11 @@ def main():
     elapsed_time = end_time - start_time
     print(f"Total elapsed time: {elapsed_time:.2f} seconds")
     
+    # Graph generation
     '''
     if results:
         vrp_best, vrp_logbook, vrp_pset = results
         
-        # Plot all routes for the first instance
         if instances:
             instance = instances[3]
             feature_extractor = VRPFeatureExtractor(instance)
@@ -644,7 +622,7 @@ def main():
             if gp_solution and len(gp_solution) > 0:
                 plot_route(instance, gp_solution, title=f"{instance.name}", fitness=gp_fitness)
                 plt.show()
-'''
+    '''
 
 if __name__ == "__main__":
     main()

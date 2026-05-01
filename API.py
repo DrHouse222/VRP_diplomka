@@ -1,22 +1,25 @@
+"""
+Generate VRP heuristic expressions via OpenRouter.
+
+Builds variant-specific feature lists, requests symbolic scoring expressions
+from an LLM, and saves generated heuristics for later evaluation.
+"""
+
 import requests
 import json
 import os
 import argparse
 from typing import List, Dict, Any
 
-from problem_types import VRP_PROBLEM_TYPE
+from vrp_problem import VRP_PROBLEM_TYPE
 
-# Short human-readable descriptions for each feature name
 FEATURE_DESCRIPTIONS: Dict[str, str] = {
-    # Core spatial
     "dist_to_depot": "distance from (route) depot to candidate customer",
     "dist_from_current": "distance from current node to candidate customer",
     "savings": "Clarke-Wright style savings for inserting candidate",
-    # Capacity features
     "demand": "demand of candidate customer",
     "remaining_capacity": "remaining vehicle capacity before adding candidate",
     "load_percentage": "current load divided by vehicle capacity",
-    # Time-related features
     "current_time": "current time in route construction",
     "arrival_time": "arrival time at candidate if selected next",
     "ready_time": "earliest allowed service start time at candidate",
@@ -24,12 +27,10 @@ FEATURE_DESCRIPTIONS: Dict[str, str] = {
     "wait_time": "waiting time before service can start at candidate",
     "slack_to_due": "time left until due time at arrival",
     "route_urgency": "slack_to_due divided by travel distance (higher = less urgent)",
-    # Battery / green VRP features
     "current_battery": "current battery level of vehicle",
     "battery_percentage": "current_battery divided by battery capacity",
     "energy_to_customer": "energy required to reach candidate from current node",
     "dist_to_nearest_charger": "distance from candidate to nearest charging station",
-    # Multi-depot features
     "depot_rank": "rank of this depot by distance to candidate (1 = closest depot)",
     "depot_distance_advantage": "how much closer this depot is vs second-closest depot to candidate",
 }
@@ -125,7 +126,6 @@ Create a scoring function for selecting the next customer in a VRP route constru
             f"Empty model content in response: {str(result)[:800]}"
         )
     
-    # Extract just the function (remove markdown if present)
     if "```python" in function_code:
         function_code = function_code.split("```python")[1].split("```")[0].strip()
     elif "```" in function_code:
@@ -178,7 +178,6 @@ def generate_all_vrp_heuristics(api_key: str, n_per_variant: int = 30) -> List[D
       - features
       - heuristic_code
     """
-    # Map (TW, green, MD) to variant name (as in DEAP_gen)
     variant_names: Dict[tuple, str] = {
         (False, False, False): "VRP",
         (True,  False, False): "VRPTW",
@@ -208,7 +207,6 @@ def generate_all_vrp_heuristics(api_key: str, n_per_variant: int = 30) -> List[D
                         bool_MD=bool_MD,
                     )
 
-                    # Build feature string with short descriptions for the prompt
                     entries: List[str] = []
                     for name in features:
                         desc = FEATURE_DESCRIPTIONS.get(name, "").strip()

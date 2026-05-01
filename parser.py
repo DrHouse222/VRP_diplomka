@@ -1,11 +1,39 @@
+"""
+Parsers for multiple VRP dataset formats used in this project.
+
+Includes loaders for:
+- CVRP/VRP instances via vrplib
+- Solomon VRPTW instances
+- Cordeau MDVRP / MDVRPTW instances
+- EVRPTW-based GVRP instances
+"""
+
 import os
 import vrplib
 import numpy as np
 import re
-from typing import List, Dict
 import xml.etree.ElementTree as ET
 
 class VRPInstance:
+    """Parses CVRP/VRP instances using vrplib.
+
+    Attributes
+    -----------
+    name: str
+    num_trucks: int
+    capacity: int
+    dimension: int
+        Number of nodes (including depot)
+    depot: int
+        Depot node index (always 0)
+    edge_weight_type: str
+    type: str
+    coords: np.ndarray shape (n, 2)
+    demands: np.ndarray shape (n,)
+    dist_matrix: np.ndarray shape (n, n)
+        Distance matrix from vrplib (instance_dict["edge_weight"])
+    """
+
     def __init__(self, instance):
         instance_dict = vrplib.read_instance(instance)
 
@@ -20,11 +48,9 @@ class VRPInstance:
         self.edge_weight_type = instance_dict["edge_weight_type"]
         self.type = instance_dict["type"]
         
-        # numpy arrays
         self.coords = instance_dict["node_coord"]
         self.demands = instance_dict["demand"]
 
-        # distance matrix
         self.dist_matrix = instance_dict["edge_weight"]
 
     def __repr__(self):
@@ -50,7 +76,6 @@ class VRPTWInstance:
     """
 
     def __init__(self, file_path: str):
-        # Use vrplib to parse Solomon format
         instance_dict = vrplib.read_instance(file_path, instance_format="solomon")
         
         self.name = instance_dict["name"]
@@ -60,14 +85,12 @@ class VRPTWInstance:
         self.dimension = instance_dict["node_coord"].shape[0]
         self.depot = 0
         
-        # Extract arrays
         self.coords = instance_dict["node_coord"]
         self.demands = instance_dict["demand"]
         self.ready_times = instance_dict["time_window"][:, 0]  # ready times
         self.due_dates = instance_dict["time_window"][:, 1]    # due dates
         self.service_times = instance_dict["service_time"]
         
-        # Use precomputed distance matrix from vrplib
         self.dist_matrix = instance_dict["edge_weight"]
 
     def __repr__(self):
@@ -119,7 +142,6 @@ class CordeauMDVRPInstance:
             self.num_customers = n
             self.num_depots = t
 
-            # Per-depot (or per-day) duration and capacity
             durations = []
             capacities = []
             for _ in range(t):
@@ -134,13 +156,10 @@ class CordeauMDVRPInstance:
                 durations.append(D)
                 capacities.append(Q)
 
-            # Default global capacity and max_travel_time
-            # Use the maximum Q and a positive D if available
             self.capacity = max(capacities) if capacities else 0.0
             positive_D = [d for d in durations if d > 0]
             self.max_travel_time = max(positive_D) if positive_D else float("inf")
 
-            # Read all remaining lines as nodes (customers + depots)
             node_rows = []
             for line in f:
                 stripped = line.strip()
@@ -158,13 +177,10 @@ class CordeauMDVRPInstance:
                 freq = int(parts[5])
                 a = int(parts[6])
 
-                # Visit combinations (not used by this parser)
                 combo_start = 7
                 combo_end = 7 + a
-                # combos = parts[combo_start:combo_end]  # ignored
                 rest = parts[combo_end:]
 
-                # Time windows only for MDVRPTW (type 6)
                 if type_code == 6 and len(rest) >= 2:
                     e = float(rest[-2])
                     l = float(rest[-1])
@@ -188,17 +204,13 @@ class CordeauMDVRPInstance:
 
         expected_nodes = n + t
         if len(node_rows) != expected_nodes:
-            # Be tolerant but warn via exception so user can fix data if needed
             raise ValueError(
                 f"Expected {expected_nodes} nodes (customers + depots) in {file_path}, "
                 f"found {len(node_rows)}"
             )
 
-        # Dimension: customers + depots
         self.dimension = expected_nodes
 
-        # Map original index (1..n+t) to 0-based position
-        # Cordeau MDVRP/MDVRPTW instances use 1..n+t, with last t entries as depots
         self.coords = np.zeros((self.dimension, 2), dtype=float)
         self.demands = np.zeros(self.dimension, dtype=float)
         self.service_times = np.zeros(self.dimension, dtype=float)
@@ -208,7 +220,6 @@ class CordeauMDVRPInstance:
             self.ready_times = np.zeros(self.dimension, dtype=float)
             self.due_dates = np.zeros(self.dimension, dtype=float)
 
-        # Node types: 1 = customer, 0 = depot (no charging stations here)
         self.node_types = np.ones(self.dimension, dtype=int)
 
         for row in node_rows:
@@ -225,15 +236,12 @@ class CordeauMDVRPInstance:
                 self.ready_times[idx_0] = row["ready"]
                 self.due_dates[idx_0] = row["due"]
 
-        # Depots: last t entries (indices n .. n+t-1)
         self.depots = list(range(n, n + t))
         for d_idx in self.depots:
             self.node_types[d_idx] = 0
 
-        # For compatibility with single-depot code, pick first depot as main depot
         self.depot = self.depots[0] if self.depots else 0
 
-        # Distance matrix (Euclidean)
         if self.dimension > 0:
             diff = self.coords[:, None, :] - self.coords[None, :, :]
             self.dist_matrix = np.hypot(diff[..., 0], diff[..., 1])
@@ -286,32 +294,6 @@ class GVRPMultiTechInstance:
     def __init__(self, file_path: str):
         self.file_path = file_path
         self.name = os.path.basename(file_path)
-        self._parse_evrptw_txt(file_path)
-
-    # ------------------------------------------------------------------
-    # EVRPTW .txt parser (Sets/evrptw_instances)
-    # ------------------------------------------------------------------
-    def _parse_evrptw_txt(self, file_path: str) -> None:
-        """
-        Parse EVRPTW instances in text format located in `Sets/evrptw_instances/`.
-        
-        Format (see readme in that directory):
-        - Header line with column names
-        - One line per location:
-            StringId  Type  x  y  demand  ReadyTime  DueDate  ServiceTime
-          where:
-            Type: 'd' = depot, 'f' = recharging station, 'c' = customer
-        - Trailing parameter lines:
-            Q Vehicle fuel tank capacity /.../
-            C Vehicle load capacity /.../
-            r fuel consumption rate /.../
-            g inverse refueling rate /.../
-            v average Velocity /.../
-        
-        We build a unified indexing:
-            0      : depot
-            1..n-1 : remaining nodes in file order (stations or customers)
-        """
         nodes = []
         Q = None
         C = None
@@ -325,13 +307,11 @@ class GVRPMultiTechInstance:
                 if not stripped:
                     continue
 
-                # Skip header
                 if stripped.lower().startswith("stringid"):
                     continue
 
                 parts = stripped.split()
 
-                # Node line
                 if len(parts) >= 8 and parts[1] in {"d", "f", "c"}:
                     string_id = parts[0]
                     type_char = parts[1].lower()
@@ -350,9 +330,7 @@ class GVRPMultiTechInstance:
                     )
                     continue
 
-                # Parameter lines at the bottom
                 if stripped.startswith("Q Vehicle fuel tank capacity"):
-                    # pattern: Q Vehicle fuel tank capacity /62.14/
                     try:
                         Q = float(stripped.split("/")[1])
                     except Exception:
@@ -381,7 +359,6 @@ class GVRPMultiTechInstance:
         if not nodes:
             raise ValueError(f"No nodes parsed from EVRPTW instance: {file_path}")
 
-        # Put depot first, then remaining nodes in original order
         depot_nodes = [n for n in nodes if n[1] == "d"]
         other_nodes = [n for n in nodes if n[1] != "d"]
 
@@ -420,187 +397,29 @@ class GVRPMultiTechInstance:
             self.due_dates[idx] = due
             self.service_times[idx] = service
 
-        # Depot is the first element by construction
         self.depot = 0
 
-        # EVRPTW parameters
-        # Battery capacity Q and load capacity C
         self.battery_capacity = float(Q) if Q is not None else 0.0
         self.capacity = float(C) if C is not None else 0.0
 
-        # Consumption and charging
         self.energy_consumption = float(r) if r is not None else 1.0
         self.g_inverse_refueling_rate = float(g) if g is not None else 0.0
         self.velocity = float(v) if v is not None else 1.0
 
-        # Number of vehicles is not explicitly given; keep a generic value
         self.num_vehicles = 1
 
-        # A reasonable upper bound for route duration: latest due date
         self.max_travel_time = (
             float(np.max(self.due_dates)) if self.due_dates.size > 0 else 0.0
         )
 
-        # Distance matrix based on Euclidean metric
         if self.dimension > 0:
             diff = self.coords[:, None, :] - self.coords[None, :, :]
             self.dist_matrix = np.hypot(diff[..., 0], diff[..., 1])
         else:
             self.dist_matrix = np.zeros((0, 0), dtype=float)
 
-    
-class VRPFeatureExtractor:
-    """Extracts VRP/VRPTW/GVRP features for request evaluation.
-    
-    Works with VRPInstance, VRPTWInstance, and GVRPMultiTechInstance.
-    Automatically detects instance type and adapts feature extraction.
-    """
-    
-    def __init__(self, instance: VRPInstance):
-        self.instance = instance
-        self.depot = instance.depot
-        self.dist_matrix = instance.dist_matrix
-        self.demands = instance.demands
-        self.capacity = instance.capacity
-        # Optional TW fields
-        self.has_tw = all(
-            hasattr(instance, attr) for attr in ("ready_times", "due_dates", "service_times")
+    def __repr__(self):
+        return (
+            f"GVRPMultiTechInstance({self.name}, n={self.dimension}, cap={self.capacity}, "
+            f"battery={self.battery_capacity})"
         )
-        if self.has_tw:
-            self.ready_times = instance.ready_times
-            self.due_dates = instance.due_dates
-            self.service_times = instance.service_times
-            # For normalization of time-based features
-            self.max_due = float(np.max(self.due_dates)) if len(self.due_dates) > 0 else 1.0
-        else:
-            self.max_due = 1.0
-        
-        # GVRP fields (optional)
-        self.has_battery = getattr(instance, "battery_capacity", 0.0) > 0.0
-        if self.has_battery:
-            self.battery_capacity = getattr(instance, "battery_capacity", 0.0)
-            self.energy_consumption = getattr(instance, "energy_consumption", 1.0)
-            self.node_types = getattr(instance, "node_types", None)
-            if self.node_types is not None:
-                n = len(self.node_types)
-                self.stations = [i for i in range(n) if self.node_types[i] == 2]  # Type 2 are charging stations
-            else:
-                self.stations = []
-        else:
-            self.battery_capacity = float('inf')
-            self.energy_consumption = 1.0
-            self.stations = []
-
-        # Depot list (for multi-depot instances) and total customer demand (for workload)
-        self.depots = getattr(instance, "depots", None)
-        if self.depots is None:
-            self.depots = [self.depot]
-        self.depots = list(self.depots)
-
-        n_all = len(self.demands)
-        if hasattr(self, "node_types") and self.node_types is not None:
-            self.customers = [i for i in range(n_all) if self.node_types[i] == 1]
-        else:
-            self.customers = [i for i in range(n_all) if i not in self.depots]
-        self.total_customer_demand = float(
-            sum(float(self.demands[i]) for i in self.customers)
-        ) if self.customers else 1.0
-    
-    def extract_features(self, request: int, current_route: List[int], 
-                        current_load: float, current_position: int, current_time: float = 0.0,
-                        current_battery: float = None, dist_to_nearest_charger: Dict[int, float] = None,
-                        route_depot: int = None, bool_capacity: bool = True) -> Dict[str, float]:
-        """
-        Extract features for a given candidate request.
-        
-        Args:
-            request: Customer node to evaluate
-            current_route: Current route being built
-            current_load: Current load of the route
-            current_position: Current position in the route (last customer)
-            current_time: Current time at the position (used if TW present)
-            current_battery: Current battery level (for GVRP)
-            dist_to_nearest_charger: Dictionary mapping node -> distance to nearest charger (for GVRP)
-            route_depot: Depot of the current route (for multi-depot). If None, uses instance.depot.
-            bool_capacity: If False, capacity-related features are zeroed out.
-        
-        Returns:
-            Dictionary of feature values
-        """
-        features: Dict[str, float] = {}
-        depot = route_depot if route_depot is not None else self.depot
-        
-        # Basic distance features (use route depot so multi-depot is correct)
-        dist_from_current = float(self.dist_matrix[current_position, request])
-        features['dist_to_depot'] = float(self.dist_matrix[depot, request])
-        features['dist_from_current'] = dist_from_current
-
-        # Savings-like features
-        features['savings'] = (
-            float(self.dist_matrix[depot, current_position]) +
-            float(self.dist_matrix[request, depot]) -
-            float(self.dist_matrix[current_position, request])
-        )
-
-        # Demand and capacity features
-        if bool_capacity:
-            features['demand'] = float(self.demands[request])
-            features['remaining_capacity'] = float(self.capacity - current_load)
-            if self.capacity > 0:
-                features['load_percentage'] = current_load / self.capacity
-            else:
-                features['load_percentage'] = 0.0
-
-        # Depot-specific features
-        # depot_relative_workload will be set in solve_with_scoring based on route counts
-        # Distance-based advantage and rank of this depot for this customer
-        if len(self.depots) > 1:
-            d_this = float(self.dist_matrix[depot, request])
-            depot_dists = [float(self.dist_matrix[d, request]) for d in self.depots]
-            sorted_dists = sorted(depot_dists)
-            # Rank: 1 = closest depot
-            rank = sorted_dists.index(d_this) + 1 if d_this in sorted_dists else len(self.depots)
-            features['depot_rank'] = float(rank)
-            # Advantage: how much closer this depot is vs second-best
-            if len(sorted_dists) > 1:
-                second_best = sorted_dists[1]
-                features['depot_distance_advantage'] = max(0.0, second_best - d_this)
-            else:
-                features['depot_distance_advantage'] = 0.0
-
-        # Time-window-aware features (if available)
-        if self.has_tw:
-            travel = float(self.dist_matrix[current_position, request])
-            arrival = current_time + travel
-            ready = float(self.ready_times[request])
-            due = float(self.due_dates[request])
-            wait_time = max(0.0, ready - arrival)
-            slack_to_due = max(0.0, due - arrival)
-
-            features['current_time'] = float(current_time)
-            features['arrival_time'] = arrival
-            features['ready_time'] = ready
-            features['due_time'] = due
-            features['wait_time'] = wait_time
-            features['slack_to_due'] = slack_to_due
-            d_safe = max(dist_from_current, 1e-6)
-            features['route_urgency'] = (due - float(current_time)) / d_safe
-        
-        # GVRP battery features (if battery constraints exist)
-        if self.has_battery and current_battery is not None:
-            # Current battery state
-            features['current_battery'] = float(current_battery)
-            features['battery_percentage'] = current_battery / self.battery_capacity
-            
-            # Energy needed to reach customer
-            dist_to_customer = float(self.dist_matrix[current_position, request])
-            energy_to_customer = dist_to_customer * self.energy_consumption
-            features['energy_to_customer'] = energy_to_customer
-
-            # Distance to nearest charging station
-            if dist_to_nearest_charger is not None and request in dist_to_nearest_charger:
-                features['dist_to_nearest_charger'] = dist_to_nearest_charger[request]
-            else:
-                features['dist_to_nearest_charger'] = 0.0
-    
-        return features

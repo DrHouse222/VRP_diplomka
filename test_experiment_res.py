@@ -12,9 +12,9 @@ import os
 
 from deap import gp
 
-from parser import VRPFeatureExtractor
-from problem_types import VRP_PROBLEM_TYPE
-from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic2
+from vrp_feature_extractor import VRPFeatureExtractor
+from vrp_problem import VRP_PROBLEM_TYPE
+from basic_heuristics import nearest_neighbor_heuristic, saving_heuristic
 from data_generation import remove_tw_from_gvrp, evrptw_to_multi_depot
 from DEAP_gen import load_instances_by_type, create_toolbox
 
@@ -39,7 +39,6 @@ def build_scoring_from_expr(expr_str: str):
     Uses the same primitive set as in DEAP_gen.
     """
     toolbox, pset = create_toolbox()
-    # Parse the string into a PrimitiveTree, then compile
     tree = gp.PrimitiveTree.from_string(expr_str, pset)
     func = gp.compile(expr=tree, pset=pset)
     return func
@@ -51,14 +50,25 @@ def main(
     output_csv_path: str | None = None,
 ):
     """
-    Evaluate best_expr from experiment_results.jsonl against NN and Savings.
+    Evaluate GP expressions from a JSONL file against NN and Savings baselines.
 
-    max_instances_per_variant: if set (e.g. 3), only use that many instances per
-    variant for a quicker run. None = use all instances.
+    Parameters
+    ----------
+    max_instances_per_variant : int or None
+        Optional cap on how many instances are evaluated for each
+        problem variant. If None, evaluates all available instances
+        for that variant.
+    results_path : str
+        Path to input JSONL with experiment records containing
+        at least `problem_type`, `bool_capacity`, and `best_expr`.
+        Default: "exp_test.jsonl".
+    output_csv_path : str or None
+        Optional explicit path for the output CSV summary.
+        Default: "exp_test.csv".
+
     """
     problem_map = load_problem_map()
 
-    # Load all experiment records
     records = []
     with open(results_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -81,8 +91,6 @@ def main(
         problem_type = rec.get("problem_type")
         bool_capacity = rec.get("bool_capacity", False)
         best_expr = rec.get("best_expr")
-        # Infer flags TW/green/MD from problem_type name.
-        # Accept both old labels (CVRP, MDCVRP) and new ones (VRP, MDVRP).
         if problem_type in ("VRP", "CVRP"):
             bool_TW = False
             bool_green = False
@@ -161,15 +169,9 @@ def main(
         for inst in instances:
             try:
                 fe = VRPFeatureExtractor(inst)
-                # Choose solver depending on green flag
-                if bool_green:
-                    gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(
-                        inst, fe, scoring_func, bool_capacity
-                    )
-                else:
-                    gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring_without_green(
-                        inst, fe, scoring_func, bool_capacity
-                    )
+                gp_routes = VRP_PROBLEM_TYPE.solve_with_scoring(
+                    inst, fe, scoring_func, bool_capacity
+                )
                 gp_costs.append(VRP_PROBLEM_TYPE.compute_cost(inst, gp_routes))
             except Exception:
                 gp_costs.append(float("nan"))
@@ -181,7 +183,7 @@ def main(
                 nn_costs.append(float("nan"))
 
             try:
-                s_routes = saving_heuristic2(inst, bool_capacity=bool_capacity)
+                s_routes = saving_heuristic(inst, bool_capacity=bool_capacity)
                 s_costs.append(VRP_PROBLEM_TYPE.compute_cost(inst, s_routes))
             except Exception:
                 s_costs.append(float("nan"))
@@ -214,7 +216,6 @@ def main(
             }
         )
 
-    # Report table
     print("\n" + "=" * 110)
     print("GP best_expr vs NN vs Savings (average cost per problem type)")
     print("=" * 110)
@@ -245,7 +246,6 @@ def main(
         )
     print("=" * 110)
 
-    # Save CSV
     if output_csv_path is None:
         base = os.path.splitext(os.path.basename(results_path))[0]
         out_dir = os.path.dirname(results_path) or os.path.dirname(__file__)
@@ -278,7 +278,6 @@ if __name__ == "__main__":
     n_inst = None
     args = sys.argv[1:]
 
-    # If first argument is a directory, run in batch mode over all JSONL files
     if args and os.path.isdir(args[0]):
         experiments_dir = args[0]
         exp_results_dir = os.path.join(os.path.dirname(__file__), "exp_results")
@@ -300,10 +299,6 @@ if __name__ == "__main__":
                 output_csv_path=out_csv,
             )
     else:
-        # Single-file mode (backwards compatible):
-        #   python test_experiment_res.py            -> uses default results_path
-        #   python test_experiment_res.py N         -> limit instances to N
-        #   python test_experiment_res.py file.jsonl [N]
         results_path = "exp_test.jsonl"
         if args:
             if os.path.isfile(args[0]):

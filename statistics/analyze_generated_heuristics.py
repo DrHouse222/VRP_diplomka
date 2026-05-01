@@ -52,7 +52,6 @@ class HeuristicVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Name(self, node: ast.Name) -> None:
-        # Function names are loaded as Name too, skip them here.
         parent = getattr(node, "_parent", None)
         if isinstance(parent, ast.Call) and parent.func is node:
             return
@@ -60,15 +59,12 @@ class HeuristicVisitor(ast.NodeVisitor):
 
     def visit_Constant(self, node: ast.Constant) -> None:
         if isinstance(node.value, (int, float)):
-            # Skip constants that are part of a unary signed literal;
-            # they are handled in visit_UnaryOp to preserve the sign.
             parent = getattr(node, "_parent", None)
             if isinstance(parent, ast.UnaryOp) and parent.operand is node:
                 return
             self.constants[str(node.value)] += 1
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> None:
-        # Python AST encodes "-1.0" as UnaryOp(USub, Constant(1.0)).
         if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, (int, float)):
             if isinstance(node.op, ast.USub):
                 self.constants[str(-node.operand.value)] += 1
@@ -154,10 +150,8 @@ def save_counter_bar(
         ax.bar(x, values, color="steelblue", alpha=0.9)
         ax.set_xticks(x)
         ax.set_xticklabels(labels, rotation=45, ha="right")
-        # Trim extra whitespace at the ends of the x-axis
         if x:
             ax.set_xlim(-0.5, len(x) - 0.5)
-        ax.set_title(title)
         ax.set_ylabel("Count")
         ax.grid(axis="y", alpha=0.3)
         fig.tight_layout()
@@ -168,7 +162,6 @@ def save_counter_bar(
         fig_h = max(4.0, min(12.0, 0.4 * len(labels) + 1.2))
         fig, ax = plt.subplots(figsize=(10, fig_h))
         ax.barh(labels, values, color="steelblue", alpha=0.9)
-        ax.set_title(title)
         ax.set_xlabel("Count")
         ax.grid(axis="x", alpha=0.3)
         fig.tight_layout()
@@ -222,13 +215,12 @@ def save_size_stats_csv(out_path: Path, stats_rows: list[dict[str, int | str]]) 
 def save_size_plots(out_dir: Path, stats_rows: list[dict[str, int | str]], dpi: int) -> tuple[Path, Path]:
     sizes = [int(r["size_total"]) for r in stats_rows]
     if not sizes:
-        return out_dir / "size_histogram.png", out_dir / "size_components_boxplot.png"
+        return out_dir / "size_histogram.pdf", out_dir / "size_components_boxplot.pdf"
 
-    p_hist = out_dir / "size_histogram.png"
+    p_hist = out_dir / "size_histogram.pdf"
     fig, ax = plt.subplots(figsize=(8, 4.5))
     bins = min(20, max(5, len(set(sizes))))
     ax.hist(sizes, bins=bins, color="slateblue", alpha=0.85, edgecolor="black")
-    ax.set_title("Heuristic size distribution")
     ax.set_xlabel("Total size")
     ax.set_ylabel("Number of heuristics")
     ax.grid(axis="y", alpha=0.3)
@@ -236,7 +228,7 @@ def save_size_plots(out_dir: Path, stats_rows: list[dict[str, int | str]], dpi: 
     fig.savefig(p_hist, dpi=dpi)
     plt.close(fig)
 
-    p_box = out_dir / "size_components_boxplot.png"
+    p_box = out_dir / "size_components_boxplot.pdf"
     f_vals = [int(r["functions_count"]) for r in stats_rows]
     t_vals = [int(r["terminals_count"]) for r in stats_rows]
     c_vals = [int(r["constants_count"]) for r in stats_rows]
@@ -246,7 +238,6 @@ def save_size_plots(out_dir: Path, stats_rows: list[dict[str, int | str]], dpi: 
     for patch, color in zip(bp["boxes"], colors):
         patch.set_facecolor(color)
         patch.set_alpha(0.8)
-    ax.set_title("Heuristic size components per expression")
     ax.set_ylabel("Count")
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -265,14 +256,14 @@ def main() -> None:
     save_counter_bar(
         functions,
         "Function usage",
-        args.out_dir / "functions_usage.png",
+        args.out_dir / "functions_usage.pdf",
         args.top_n,
         args.dpi,
     )
     save_counter_bar(
         terminals,
         "Terminal usage",
-        args.out_dir / "terminals_usage.png",
+        args.out_dir / "terminals_usage.pdf",
         args.top_n,
         args.dpi,
         orientation="v",
@@ -280,7 +271,7 @@ def main() -> None:
     save_counter_bar(
         constants,
         "Constant usage",
-        args.out_dir / "constants_usage.png",
+        args.out_dir / "constants_usage.pdf",
         args.top_n,
         args.dpi,
     )
@@ -298,9 +289,9 @@ def main() -> None:
 
     print(f"Read rows: {len(rows)}")
     print(f"Parsed heuristic_code rows: {parsed_count}")
-    print(f"Wrote: {args.out_dir / 'functions_usage.png'}")
-    print(f"Wrote: {args.out_dir / 'terminals_usage.png'}")
-    print(f"Wrote: {args.out_dir / 'constants_usage.png'}")
+    print(f"Wrote: {args.out_dir / 'functions_usage.pdf'}")
+    print(f"Wrote: {args.out_dir / 'terminals_usage.pdf'}")
+    print(f"Wrote: {args.out_dir / 'constants_usage.pdf'}")
     print(f"Wrote: {args.out_dir / 'usage_summary.csv'}")
     print(f"Wrote: {args.out_dir / 'size_stats_per_heuristic.csv'}")
     print(f"Wrote: {p_hist}")

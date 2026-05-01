@@ -28,7 +28,6 @@ from node_size_labels import node_depth_label, node_depth_sort_tuple
 FNAME_RE = re.compile(r"^exp_([A-Za-z])_(\d+)\.jsonl$", re.IGNORECASE)
 TOKEN_RE = re.compile(r"[A-Za-z_]\w*|[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
 
-# Drop extreme negative outliers so one bad row does not dominate the y-scale / regression
 MIN_PCT_VS_NN = -30.0
 
 
@@ -177,11 +176,11 @@ def main() -> None:
         "--out",
         type=Path,
         default=None,
-        help="Output PNG (default: <jsonl_dir>/figures/size_vs_performance.png)",
+        help="Output PDF (default: <jsonl_dir>/figures/size_vs_performance.pdf)",
     )
     parser.add_argument("--dpi", type=int, default=150)
     args = parser.parse_args()
-    out = args.out or (args.jsonl_dir / "figures" / "size_vs_performance.png")
+    out = args.out or (args.jsonl_dir / "figures" / "size_vs_performance.pdf")
     run(args.jsonl_dir, args.csv_dir, out, args.dpi)
 
 

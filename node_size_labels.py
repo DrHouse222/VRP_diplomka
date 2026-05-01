@@ -1,11 +1,10 @@
 """
 Labels for node_size experiments: filenames use letters (exp_A_1.jsonl) but plots
-use only initial / mutation depth ranges (see notes.txt).
+use only initial / mutation depth ranges.
 """
 
 from __future__ import annotations
 
-# (init_lo, init_hi, mut_lo, mut_hi) per filename letter
 NODE_SIZE_SORT_KEY: dict[str, tuple[int, int, int, int]] = {
     "A": (2, 6, 0, 1),
     "B": (1, 4, 0, 1),

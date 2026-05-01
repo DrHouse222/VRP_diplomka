@@ -2,9 +2,7 @@
 """
 Batch runner for GP VRP experiments.
 
-Iterates over all supported problem variants (VRP, VRPTW, GVRP, G-VRPTW,
-MDVRP, MDVRPTW, GVRP-MD, G-VRPTW-MD) and runs GP for each combination
-of capacity constraint (on/off) and problem type.
+Iterates over all supported problem variants and runs GP for each combination.
 
 Results (best evolved expression, fitness, timings, flags) are saved
 to a JSONL file for later analysis.
@@ -82,10 +80,8 @@ def run_all_experiments(
         (limit instances per variant for a quicker eval pass). None = all.
     """
 
-    # Make sure directory exists
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    # Load all instance groups once
     (
         cvrp_instances,
         vrptw_instances,
@@ -94,7 +90,6 @@ def run_all_experiments(
         mdvrptw_instances,
     ) = load_instances_by_type()
 
-    # Problem map matches DEAP_gen.main
     def build_problem_map():
         return {
             (False, False, False): ("VRP", cvrp_instances),
@@ -134,11 +129,9 @@ def run_all_experiments(
                         if not instances:
                             continue
 
-                        # Per-experiment seed
                         if base_seed != 0:
                             seed = int(base_seed) + exp_index
                         else:
-                            # Use a random seed when base_seed is not provided
                             import random
 
                             seed = random.randint(0, 2**31 - 1)
@@ -155,7 +148,6 @@ def run_all_experiments(
                             all_instances=instances,
                             problem_type=problem_type,
                             bool_capacity=bool_capacity,
-                            bool_green=bool_green,
                             n_train=n_train,
                             n_test=n_test,
                             population_size=population_size,
@@ -184,10 +176,6 @@ def run_all_experiments(
                             else None
                         )
 
-                        # Serialize logbook (fitness/size evolution).
-                        # DEAP's MultiStatistics stores per-chapter data in
-                        # logbook.chapters['fitness'] and ['size'], while logbook
-                        # entries themselves only contain gen / nevals.
                         log_evolution: List[Dict[str, Any]] = []
                         fitness_chapter = getattr(logbook, "chapters", {}).get("fitness")
                         size_chapter = getattr(logbook, "chapters", {}).get("size")
@@ -202,7 +190,6 @@ def run_all_experiments(
                                     pass
                                 base[k] = v
 
-                            # Attach fitness stats for this generation, if present
                             if fitness_chapter is not None and i < len(fitness_chapter):
                                 fit_stats = fitness_chapter[i]
                                 for stat_name, v in dict(fit_stats).items():
@@ -213,7 +200,6 @@ def run_all_experiments(
                                         pass
                                     base[f"fitness_{stat_name}"] = v
 
-                            # Attach size stats for this generation, if present
                             if size_chapter is not None and i < len(size_chapter):
                                 sz_stats = size_chapter[i]
                                 for stat_name, v in dict(sz_stats).items():
@@ -267,7 +253,6 @@ if __name__ == "__main__":
     parser.add_argument("--cxpb", type=float, default=1.0, help="Crossover probability.")
     parser.add_argument("--mutpb", type=float, default=0.2, help="Mutation probability.")
 
-    # Keep existing defaults for the rest
     parser.add_argument("--output_path", type=str, default="experiment_results_test.jsonl")
     parser.add_argument("--population_size", type=int, default=100)
     parser.add_argument("--generations", type=int, default=100)

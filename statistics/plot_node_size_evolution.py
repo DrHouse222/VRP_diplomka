@@ -28,7 +28,6 @@ if str(_REPO_ROOT) not in sys.path:
 
 from node_size_labels import node_depth_label, node_depth_sort_tuple
 
-# Smaller graphs: group by mutation tree depth range
 MUTATION_GROUPS: dict[str, list[str]] = {
     "mutation depth 0–1": ["A", "B", "D"],
     "mutation depth 1–5": ["C", "E", "F"],
@@ -136,7 +135,6 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     letters_all = sorted(by_variant.keys(), key=node_depth_sort_tuple)
 
-    # --- One big figure: all variants ---
     fig, ax = plt.subplots(figsize=(12, 6))
     plot_variant_curves(
         ax,
@@ -145,12 +143,11 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
         title="Mean population tree size (size_avg) vs generation — all depth configs",
     )
     fig.tight_layout()
-    p_all = out_dir / "node_size_evolution_all_variants.png"
+    p_all = out_dir / "node_size_evolution_all_variants.pdf"
     fig.savefig(p_all, dpi=dpi)
     plt.close(fig)
     print(f"Wrote {p_all}")
 
-    # --- One figure per mutation group ---
     for group_name, letters in MUTATION_GROUPS.items():
         fig, ax = plt.subplots(figsize=(10, 5))
         plot_variant_curves(
@@ -161,7 +158,7 @@ def run(exp_dir: Path, out_dir: Path, dpi: int) -> None:
         )
         fig.tight_layout()
         safe = group_name.replace(" ", "_").replace("–", "-")
-        p_g = out_dir / f"node_size_evolution_{safe}.png"
+        p_g = out_dir / f"node_size_evolution_{safe}.pdf"
         fig.savefig(p_g, dpi=dpi)
         plt.close(fig)
         print(f"Wrote {p_g}")
