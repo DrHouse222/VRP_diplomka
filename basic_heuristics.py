@@ -40,7 +40,6 @@ def nearest_neighbor_heuristic(instance, bool_capacity=True):
         instance, feature_extractor, nn_scoring_func, bool_capacity
     )
 
-
 def saving_heuristic(instance, bool_capacity=True) -> List[List[int]]:
     """
     Construct GVRP routes using Clarke-Wright Savings Heuristic with Battery-Aware Savings.
