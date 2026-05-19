@@ -11,6 +11,8 @@ Evolutionary search for **scoring functions** used in route construction across 
 pip install -r requirements.txt
 ```
 
+libraries numpy, mathplotlib, deap, vrplib, Requests
+
 ## Repository layout
 
 | Path | Role |
@@ -77,10 +79,9 @@ python statistics/plot_exp_results.py --exp_dir exp_results/pop_gen --out_dir ex
 python statistics/plot_jsonl_convergence.py --exp_dir experiments/pop_gen
 ```
 
+The output of these scripts are .pdf files
+
 ## LLM heuristics
 
 `API.py` builds prompts and calls OpenRouter to propose scoring expressions, `test_LLM.py` evaluates exported JSON against the baselines. Requires an API key.
 
-## License / attribution
-
-This repository is part of a diploma thesis project (FIT VUT). Dataset files under `Sets/` follow the licenses of their respective sources; cite those sources when publishing results derived from them.
